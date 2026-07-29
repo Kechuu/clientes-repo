@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión Segura de Clientes - Firebase</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase SDK y Lógica de la Aplicación -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-analytics.js";
+        import { getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
+        // ==========================================
+        // CONFIGURACIÓN DE FIREBASE (Tus credenciales)
+        // ==========================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyBMr9S5Hx8KhZto1K-TM1tqdpoShb8Cd5I",
+            authDomain: "clientes-25157.firebaseapp.com",
+            projectId: "clientes-25157",
+            storageBucket: "clientes-25157.firebasestorage.app",
+            messagingSenderId: "964761913555",
+            appId: "1:964761913555:web:f4591e75b00bd68f956c26",
+            measurementId: "G-7NRM97PDY8"
+        };
+
+        // Inicializar Firebase y Analytics
+        const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
+        const db = getFirestore(app);
+
+        let clientes = [];
+        let idEditando = null;
+
+        // Referencias del DOM
+        const clientForm = document.getElementById('clientForm');
+        const nombreInput = document.getElementById('nombre');
+        const cuitInput = document.getElementById('cuit');
+        const bancoInput = document.getElementById('banco');
+        const arcaInput = document.getElementById('arca');
+        const rentasInput = document.getElementById('rentas');
+        const artInput = document.getElementById('art');
+        const buscadorInput = document.getElementById('buscador');
+        const contenedorClientes = document.getElementById('contenedorClientes');
+        const btnCancelar = document.getElementById('btnCancelar');
+        const btnGuardar = document.getElementById('btnGuardar');
+
+        // Cargar clientes desde Firestore
+        async function cargarClientes() {
+            try {
+                const querySnapshot = await getDocs(collection(db, "clientes"));
+                clientes = [];
+                querySnapshot.forEach((docSnap) => {
+                    clientes.push({ id: docSnap.id, ...docSnap.data() });
+                });
+                mostrarClientes(buscadorInput.value);
+            } catch (error) {
+                console.error("Error al cargar los datos: ", error);
+                contenedorClientes.innerHTML = `<div class="py-6 text-center text-red-500">Error al conectar con la base de datos. Verificá las reglas de Firestore.</div>`;
+            }
+        }
+
+        // Renderizar lista
+        window.mostrarClientes = function(filtro = '') {
+            clientes.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+            contenedorClientes.innerHTML = '';
+            
+            const textoFiltro = filtro.toLowerCase();
+            const clientesFiltrados = clientes.filter(c => 
+                c.nombre.toLowerCase().includes(textoFiltro) || 
+                c.cuit.toLowerCase().includes(textoFiltro) ||
+                (c.banco && c.banco.toLowerCase().includes(textoFiltro)) ||
+                (c.arca && c.arca.toLowerCase().includes(textoFiltro)) ||
+                (c.rentas && c.rentas.toLowerCase().includes(textoFiltro)) ||
+                (c.art && c.art.toLowerCase().includes(textoFiltro))
+            );
+
+            if (clientesFiltrados.length === 0) {
+                contenedorClientes.innerHTML = `<div class="py-6 text-center text-gray-400">No se encontraron resultados</div>`;
+                return;
+            }
+
+            clientesFiltrados.forEach((cliente) => {
+                const card = document.createElement('div');
+                card.className = 'border border-gray-200 rounded-lg p-4 bg-gray-50 hover:shadow-md transition-shadow';
+                
+                card.innerHTML = `
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                        <div class="flex items-center space-x-3">
+                            <button onclick="window.toggleDetalles('${cliente.id}')" id="btn-toggle-${cliente.id}" class="w-8 h-8 flex items-center justify-center bg-blue-100 text-blue-700 font-bold rounded-full hover:bg-blue-200 transition-colors focus:outline-none">+</button>
+                            <div>
+                                <h3 class="font-semibold text-gray-800 text-base">${cliente.nombre}</h3>
+                                <p class="text-xs text-gray-500 font-mono">CUIT: ${cliente.cuit}</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-2 self-end sm:self-center">
+                            <button onclick="window.copiarDato('${cliente.cuit}', this)" class="bg-emerald-600 text-white px-2.5 py-1.5 rounded hover:bg-emerald-700 text-xs font-medium transition-colors">Copiar CUIT</button>
+                            <button onclick="window.editarCliente('${cliente.id}')" class="text-blue-600 hover:text-blue-800 font-medium text-xs px-2 py-1">Modificar</button>
+                            <button onclick="window.eliminarCliente('${cliente.id}')" class="text-red-600 hover:text-red-800 font-medium text-xs px-2 py-1">Eliminar</button>
+                        </div>
+                    </div>
+                    <div id="detalles-${cliente.id}" class="hidden mt-4 pt-4 border-t border-gray-200 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                        <div class="bg-white p-2.5 rounded border border-gray-100 flex flex-col justify-between">
+                            <div>
+                                <span class="block text-xs font-bold text-gray-500 uppercase">Banco</span>
+                                <span class="text-sm font-medium text-gray-800 break-all">${cliente.banco || '<span class="text-gray-300 italic">No especificado</span>'}</span>
+                            </div>
+                            ${cliente.banco ? `<button onclick="window.copiarDato('${cliente.banco}', this)" class="mt-2 bg-emerald-500 text-white py-1 px-2 rounded hover:bg-emerald-600 text-xs font-medium self-start transition-colors">Copiar Banco</button>` : ''}
+                        </div>
+                        <div class="bg-white p-2.5 rounded border border-gray-100 flex flex-col justify-between">
+                            <div>
+                                <span class="block text-xs font-bold text-gray-500 uppercase">Clave ARCA</span>
+                                <span class="text-sm font-mono text-gray-800 break-all">${cliente.arca || '<span class="text-gray-300 italic">No especificada</span>'}</span>
+                            </div>
+                            ${cliente.arca ? `<button onclick="window.copiarDato('${cliente.arca}', this)" class="mt-2 bg-emerald-500 text-white py-1 px-2 rounded hover:bg-emerald-600 text-xs font-medium self-start transition-colors">Copiar ARCA</button>` : ''}
+                        </div>
+                        <div class="bg-white p-2.5 rounded border border-gray-100 flex flex-col justify-between">
+                            <div>
+                                <span class="block text-xs font-bold text-gray-500 uppercase">Clave Rentas</span>
+                                <span class="text-sm font-mono text-gray-800 break-all">${cliente.rentas || '<span class="text-gray-300 italic">No especificada</span>'}</span>
+                            </div>
+                            ${cliente.rentas ? `<button onclick="window.copiarDato('${cliente.rentas}', this)" class="mt-2 bg-emerald-500 text-white py-1 px-2 rounded hover:bg-emerald-600 text-xs font-medium self-start transition-colors">Copiar Rentas</button>` : ''}
+                        </div>
+                        <div class="bg-white p-2.5 rounded border border-gray-100 flex flex-col justify-between">
+                            <div>
+                                <span class="block text-xs font-bold text-gray-500 uppercase">Clave ART</span>
+                                <span class="text-sm font-mono text-gray-800 break-all">${cliente.art || '<span class="text-gray-300 italic">No especificada</span>'}</span>
+                            </div>
+                            ${cliente.art ? `<button onclick="window.copiarDato('${cliente.art}', this)" class="mt-2 bg-emerald-500 text-white py-1 px-2 rounded hover:bg-emerald-600 text-xs font-medium self-start transition-colors">Copiar ART</button>` : ''}
+                        </div>
+                    </div>
+                `;
+                contenedorClientes.appendChild(card);
+            });
+        }
+
+        window.toggleDetalles = function(id) {
+            const panel = document.getElementById(`detalles-${id}`);
+            const boton = document.getElementById(`btn-toggle-${id}`);
+            if (panel.classList.contains('hidden')) {
+                panel.classList.remove('hidden');
+                boton.textContent = '-';
+                boton.className = 'w-8 h-8 flex items-center justify-center bg-blue-600 text-white font-bold rounded-full hover:bg-blue-700 transition-colors focus:outline-none';
+            } else {
+                panel.classList.add('hidden');
+                boton.textContent = '+';
+                boton.className = 'w-8 h-8 flex items-center justify-center bg-blue-100 text-blue-700 font-bold rounded-full hover:bg-blue-200 transition-colors focus:outline-none';
+            }
+        };
+
+        window.copiarDato = function(texto, boton) {
+            navigator.clipboard.writeText(texto).then(() => {
+                const original = boton.textContent;
+                boton.textContent = "¡Copiado!";
+                boton.className = 'bg-green-700 text-white py-1 px-2 rounded text-xs font-medium';
+                setTimeout(() => {
+                    boton.textContent = original;
+                    boton.className = original.includes('CUIT') 
+                        ? 'bg-emerald-600 text-white px-2.5 py-1.5 rounded hover:bg-emerald-700 text-xs font-medium transition-colors' 
+                        : 'mt-2 bg-emerald-500 text-white py-1 px-2 rounded hover:bg-emerald-600 text-xs font-medium self-start transition-colors';
+                }, 1500);
+            });
+        };
+
+        clientForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const nuevoCliente = {
+                nombre: nombreInput.value.trim(),
+                cuit: cuitInput.value.trim(),
+                banco: bancoInput.value.trim(),
+                arca: arcaInput.value.trim(),
+                rentas: rentasInput.value.trim(),
+                art: artInput.value.trim()
+            };
+
+            try {
+                if (idEditando === null) {
+                    await addDoc(collection(db, "clientes"), nuevoCliente);
+                } else {
+                    const docRef = doc(db, "clientes", idEditando);
+                    await updateDoc(docRef, nuevoCliente);
+                    idEditando = null;
+                    btnGuardar.textContent = "Guardar Cliente";
+                    btnCancelar.classList.add('hidden');
+                }
+                window.limpiarFormulario();
+                await cargarClientes();
+            } catch (error) {
+                console.error("Error al guardar: ", error);
+                alert("Hubo un error al guardar en la base de datos.");
+            }
+        });
+
+        window.editarCliente = function(id) {
+            const cliente = clientes.find(c => c.id === id);
+            if (!cliente) return;
+            nombreInput.value = cliente.nombre;
+            cuitInput.value = cliente.cuit;
+            bancoInput.value = cliente.banco || '';
+            arcaInput.value = cliente.arca || '';
+            rentasInput.value = cliente.rentas || '';
+            artInput.value = cliente.art || '';
+            idEditando = id;
+            btnGuardar.textContent = "Actualizar Cliente";
+            btnCancelar.classList.remove('hidden');
+            nombreInput.focus();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+
+        window.eliminarCliente = async function(id) {
+            if (confirm("¿Estás seguro de que deseas eliminar este cliente?")) {
+                try {
+                    await deleteDoc(doc(db, "clientes", id));
+                    await cargarClientes();
+                } catch (error) {
+                    console.error("Error al eliminar: ", error);
+                    alert("No se pudo eliminar el registro.");
+                }
+            }
+        };
+
+        window.limpiarFormulario = function() {
+            nombreInput.value = '';
+            cuitInput.value = '';
+            bancoInput.value = '';
+            arcaInput.value = '';
+            rentasInput.value = '';
+            artInput.value = '';
+            idEditando = null;
+            btnGuardar.textContent = "Guardar Cliente";
+            btnCancelar.classList.add('hidden');
+        };
+
+        buscadorInput.addEventListener('input', function() {
+            mostrarClientes(buscadorInput.value);
+        });
+
+        // Carga inicial al iniciar la página
+        cargarClientes();
+    </script>
+</head>
+<body class="bg-gray-100 min-h-screen p-6">
+    <div class="max-w-4xl mx-auto bg-white shadow-lg rounded-lg p-6">
+        <header class="mb-6 border-b pb-4">
+            <h1 class="text-2xl font-bold text-gray-800">Directorio Seguro en Firebase</h1>
+            <p class="text-sm text-gray-500">Tus datos sincronizados en la nube en tiempo real.</p>
+        </header>
+
+        <!-- Formulario -->
+        <form id="clientForm" class="bg-gray-50 p-4 rounded-lg mb-6 border border-gray-200">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Apellido y Nombre *</label>
+                    <input type="text" id="nombre" required class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">CUIT *</label>
+                    <input type="text" id="cuit" required placeholder="Ej: 20-12345678-9" class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Banco <span class="text-gray-400 text-xs">(Opcional)</span></label>
+                    <input type="text" id="banco" placeholder="Ej: Galicia, Macro..." class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Clave de ARCA <span class="text-gray-400 text-xs">(Opcional)</span></label>
+                    <input type="text" id="arca" placeholder="Clave fiscal" class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Clave de RENTAS <span class="text-gray-400 text-xs">(Opcional)</span></label>
+                    <input type="text" id="rentas" placeholder="Clave provincial" class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Clave de ART <span class="text-gray-400 text-xs">(Opcional)</span></label>
+                    <input type="text" id="art" placeholder="Clave aseguradora" class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+            <div class="flex justify-end space-x-2">
+                <button type="button" id="btnCancelar" onclick="window.limpiarFormulario()" class="hidden bg-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-400 text-sm">Cancelar</button>
+                <button type="submit" id="btnGuardar" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm font-medium">Guardar Cliente</button>
+            </div>
+        </form>
+
+        <!-- Buscador -->
+        <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Búsqueda Dinámica</label>
+            <input type="text" id="buscador" placeholder="Empezá a tipear para filtrar..." class="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <!-- Contenedor -->
+        <div class="border border-gray-300 rounded-lg overflow-hidden shadow-sm bg-white">
+            <div class="max-h-[500px] overflow-y-auto p-4 space-y-3" id="contenedorClientes">
+                <!-- Cargando desde Firebase -->
+                <div class="py-6 text-center text-gray-400">Conectando con la base de datos...</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
