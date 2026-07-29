@@ -13,7 +13,7 @@
         import { getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
         // ==========================================
-        // CONFIGURACIÓN DE FIREBASE (Tus credenciales)
+        // CONFIGURACIÓN DE FIREBASE
         // ==========================================
         const firebaseConfig = {
             apiKey: "AIzaSyBMr9S5Hx8KhZto1K-TM1tqdpoShb8Cd5I",
@@ -25,7 +25,6 @@
             measurementId: "G-7NRM97PDY8"
         };
 
-        // Inicializar Firebase y Analytics
         const app = initializeApp(firebaseConfig);
         const analytics = getAnalytics(app);
         const db = getFirestore(app);
@@ -35,6 +34,8 @@
 
         // Referencias del DOM
         const clientForm = document.getElementById('clientForm');
+        const formContainer = document.getElementById('formContainer');
+        const btnToggleForm = document.getElementById('btnToggleForm');
         const nombreInput = document.getElementById('nombre');
         const cuitInput = document.getElementById('cuit');
         const bancoInput = document.getElementById('banco');
@@ -45,6 +46,39 @@
         const contenedorClientes = document.getElementById('contenedorClientes');
         const btnCancelar = document.getElementById('btnCancelar');
         const btnGuardar = document.getElementById('btnGuardar');
+        const modalImprimir = document.getElementById('modalImprimir');
+
+        // Mostrar / Ocultar Formulario
+        window.toggleFormulario = function() {
+            if (formContainer.classList.contains('hidden')) {
+                formContainer.classList.remove('hidden');
+                btnToggleForm.textContent = "✕ Cerrar Formulario";
+                btnToggleForm.className = "bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors shadow-sm";
+                nombreInput.focus();
+            } else {
+                limpiarFormulario();
+            }
+        }
+
+        // Mostrar / Ocultar Modal de Impresión
+        window.toggleModalImprimir = function() {
+            if (modalImprimir.classList.contains('hidden')) {
+                modalImprimir.classList.remove('hidden');
+            } else {
+                modalImprimir.classList.add('hidden');
+            }
+        }
+
+        // Formatear Fecha y Hora para mostrar de manera limpia
+        function obtenerFechaHoraActual() {
+            const ahora = new Date();
+            const dia = String(ahora.getDate()).padStart(2, '0');
+            const mes = String(ahora.getMonth() + 1).padStart(2, '0');
+            const anio = ahora.getFullYear();
+            const horas = String(ahora.getHours()).padStart(2, '0');
+            const minutos = String(ahora.getMinutes()).padStart(2, '0');
+            return `${dia}/${mes}/${anio} ${horas}:${minutos}`;
+        }
 
         // Cargar clientes desde Firestore
         async function cargarClientes() {
@@ -57,8 +91,34 @@
                 mostrarClientes(buscadorInput.value);
             } catch (error) {
                 console.error("Error al cargar los datos: ", error);
-                contenedorClientes.innerHTML = `<div class="py-6 text-center text-red-500">Error al conectar con la base de datos. Verificá las reglas de Firestore.</div>`;
+                contenedorClientes.innerHTML = `<div class="py-6 text-center text-red-500">Error al conectar con la base de datos.</div>`;
             }
+        }
+
+        // Validar CUIT (Módulo 11)
+        function validarCUIT(cuit) {
+            let cleanerCuit = cuit.replace(/[^0-9]/g, '');
+            if (cleanerCuit.length !== 11) return false;
+
+            let tipo = cleanerCuit.substring(0, 2);
+            if (tipo !== '20' && tipo !== '23' && tipo !== '24' && tipo !== '27' && tipo !== '30' && tipo !== '33' && tipo !== '34') {
+                return false;
+            }
+
+            let acumulado = 0;
+            let digitos = cleanerCuit.split('');
+            let digitoVerificador = parseInt(digitos.pop());
+
+            let bazos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+            for (let i = 0; i < 10; i++) {
+                acumulado += parseInt(digitos[i]) * bazos[i];
+            }
+
+            let resultado = 11 - (acumulado % 11);
+            if (resultado === 11) resultado = 0;
+            if (resultado === 10) resultado = 9;
+
+            return resultado === digitoVerificador;
         }
 
         // Renderizar lista
@@ -73,61 +133,78 @@
                 (c.banco && c.banco.toLowerCase().includes(textoFiltro)) ||
                 (c.arca && c.arca.toLowerCase().includes(textoFiltro)) ||
                 (c.rentas && c.rentas.toLowerCase().includes(textoFiltro)) ||
-                (c.art && c.art.toLowerCase().includes(textoFiltro))
+                (c.art && c.art.toLowerCase().includes(textoFiltro)) ||
+                (c.condicion && c.condicion.toLowerCase().includes(textoFiltro)) ||
+                (c.estado && c.estado.toLowerCase().includes(textoFiltro))
             );
 
             if (clientesFiltrados.length === 0) {
-                contenedorClientes.innerHTML = `<div class="py-6 text-center text-gray-400">No se encontraron resultados</div>`;
+                contenedorClientes.innerHTML = `<div class="py-6 text-center text-amber-900/70 font-medium">No se encontraron resultados</div>`;
                 return;
             }
 
-            clientesFiltrados.forEach((cliente) => {
+            clientesFiltrados.forEach((cliente, index) => {
                 const card = document.createElement('div');
-                card.className = 'border border-gray-200 rounded-lg p-4 bg-gray-50 hover:shadow-md transition-shadow';
+                card.className = 'border border-amber-200/80 rounded-xl p-4 bg-white/95 shadow-sm hover:shadow-md transition-shadow';
                 
+                const condicionTexto = cliente.condicion ? ` (${cliente.condicion})` : '';
+                const esActivo = cliente.estado === 'Activo';
+                const estadoBadge = esActivo 
+                    ? `<span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Activo</span>`
+                    : `<span class="bg-rose-100 text-rose-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Inactivo</span>`;
+
+                const ultimaAct = cliente.ultimaActualizacion ? `• Últ. Act: ${cliente.ultimaActualizacion}` : '';
+
                 card.innerHTML = `
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                         <div class="flex items-center space-x-3">
-                            <button onclick="window.toggleDetalles('${cliente.id}')" id="btn-toggle-${cliente.id}" class="w-8 h-8 flex items-center justify-center bg-blue-100 text-blue-700 font-bold rounded-full hover:bg-blue-200 transition-colors focus:outline-none">+</button>
+                            <button onclick="window.toggleDetalles('${cliente.id}')" id="btn-toggle-${cliente.id}" class="w-8 h-8 flex items-center justify-center bg-amber-100 text-amber-900 font-bold rounded-full hover:bg-amber-200 transition-colors focus:outline-none shadow-xs">+</button>
                             <div>
-                                <h3 class="font-semibold text-gray-800 text-base">${cliente.nombre}</h3>
-                                <p class="text-xs text-gray-500 font-mono">CUIT: ${cliente.cuit}</p>
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="text-xs font-extrabold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-md">#${index + 1}</span>
+                                    <h3 class="font-bold text-slate-800 text-base">${cliente.nombre}<span class="text-xs font-medium text-amber-800">${condicionTexto}</span></h3>
+                                    ${estadoBadge}
+                                </div>
+                                <div class="flex items-center gap-2 flex-wrap mt-0.5">
+                                    <p class="text-xs text-slate-500 font-mono">CUIT: ${cliente.cuit}</p>
+                                    <p class="text-[11px] text-slate-400 font-medium">${ultimaAct}</p>
+                                </div>
                             </div>
                         </div>
                         <div class="flex items-center space-x-2 self-end sm:self-center">
-                            <button onclick="window.copiarDato('${cliente.cuit}', this)" class="bg-emerald-600 text-white px-2.5 py-1.5 rounded hover:bg-emerald-700 text-xs font-medium transition-colors">Copiar CUIT</button>
-                            <button onclick="window.editarCliente('${cliente.id}')" class="text-blue-600 hover:text-blue-800 font-medium text-xs px-2 py-1">Modificar</button>
-                            <button onclick="window.eliminarCliente('${cliente.id}')" class="text-red-600 hover:text-red-800 font-medium text-xs px-2 py-1">Eliminar</button>
+                            <button onclick="window.copiarDato('${cliente.cuit}', this)" class="bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 text-xs font-medium transition-colors shadow-xs">Copiar CUIT</button>
+                            <button onclick="window.editarCliente('${cliente.id}')" class="text-amber-800 hover:text-amber-950 font-semibold text-xs px-2 py-1">Modificar</button>
+                            <button onclick="window.eliminarCliente('${cliente.id}')" class="text-rose-600 hover:text-rose-800 font-semibold text-xs px-2 py-1">Eliminar</button>
                         </div>
                     </div>
-                    <div id="detalles-${cliente.id}" class="hidden mt-4 pt-4 border-t border-gray-200 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                        <div class="bg-white p-2.5 rounded border border-gray-100 flex flex-col justify-between">
+                    <div id="detalles-${cliente.id}" class="hidden mt-4 pt-4 border-t border-amber-100 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                        <div class="bg-amber-50/70 p-3 rounded-lg border border-amber-100/80 flex flex-col justify-between">
                             <div>
-                                <span class="block text-xs font-bold text-gray-500 uppercase">Banco</span>
-                                <span class="text-sm font-medium text-gray-800 break-all">${cliente.banco || '<span class="text-gray-300 italic">No especificado</span>'}</span>
+                                <span class="block text-xs font-bold text-amber-900 uppercase tracking-wide">Banco</span>
+                                <span class="text-sm font-medium text-slate-700 break-all">${cliente.banco || '<span class="text-slate-400 italic">No especificado</span>'}</span>
                             </div>
-                            ${cliente.banco ? `<button onclick="window.copiarDato('${cliente.banco}', this)" class="mt-2 bg-emerald-500 text-white py-1 px-2 rounded hover:bg-emerald-600 text-xs font-medium self-start transition-colors">Copiar Banco</button>` : ''}
+                            ${cliente.banco ? `<button onclick="window.copiarDato('${cliente.banco}', this)" class="mt-3 bg-amber-700 text-white py-1.5 px-2.5 rounded-md hover:bg-amber-800 text-xs font-medium self-start transition-colors shadow-xs">Copiar Banco</button>` : ''}
                         </div>
-                        <div class="bg-white p-2.5 rounded border border-gray-100 flex flex-col justify-between">
+                        <div class="bg-amber-50/70 p-3 rounded-lg border border-amber-100/80 flex flex-col justify-between">
                             <div>
-                                <span class="block text-xs font-bold text-gray-500 uppercase">Clave ARCA</span>
-                                <span class="text-sm font-mono text-gray-800 break-all">${cliente.arca || '<span class="text-gray-300 italic">No especificada</span>'}</span>
+                                <span class="block text-xs font-bold text-amber-900 uppercase tracking-wide">Clave ARCA</span>
+                                <span class="text-sm font-mono text-slate-700 break-all">${cliente.arca || '<span class="text-slate-400 italic">No especificada</span>'}</span>
                             </div>
-                            ${cliente.arca ? `<button onclick="window.copiarDato('${cliente.arca}', this)" class="mt-2 bg-emerald-500 text-white py-1 px-2 rounded hover:bg-emerald-600 text-xs font-medium self-start transition-colors">Copiar ARCA</button>` : ''}
+                            ${cliente.arca ? `<button onclick="window.copiarDato('${cliente.arca}', this)" class="mt-3 bg-amber-700 text-white py-1.5 px-2.5 rounded-md hover:bg-amber-800 text-xs font-medium self-start transition-colors shadow-xs">Copiar ARCA</button>` : ''}
                         </div>
-                        <div class="bg-white p-2.5 rounded border border-gray-100 flex flex-col justify-between">
+                        <div class="bg-amber-50/70 p-3 rounded-lg border border-amber-100/80 flex flex-col justify-between">
                             <div>
-                                <span class="block text-xs font-bold text-gray-500 uppercase">Clave Rentas</span>
-                                <span class="text-sm font-mono text-gray-800 break-all">${cliente.rentas || '<span class="text-gray-300 italic">No especificada</span>'}</span>
+                                <span class="block text-xs font-bold text-amber-900 uppercase tracking-wide">Clave Rentas</span>
+                                <span class="text-sm font-mono text-slate-700 break-all">${cliente.rentas || '<span class="text-slate-400 italic">No especificada</span>'}</span>
                             </div>
-                            ${cliente.rentas ? `<button onclick="window.copiarDato('${cliente.rentas}', this)" class="mt-2 bg-emerald-500 text-white py-1 px-2 rounded hover:bg-emerald-600 text-xs font-medium self-start transition-colors">Copiar Rentas</button>` : ''}
+                            ${cliente.rentas ? `<button onclick="window.copiarDato('${cliente.rentas}', this)" class="mt-3 bg-amber-700 text-white py-1.5 px-2.5 rounded-md hover:bg-amber-800 text-xs font-medium self-start transition-colors shadow-xs">Copiar Rentas</button>` : ''}
                         </div>
-                        <div class="bg-white p-2.5 rounded border border-gray-100 flex flex-col justify-between">
+                        <div class="bg-amber-50/70 p-3 rounded-lg border border-amber-100/80 flex flex-col justify-between">
                             <div>
-                                <span class="block text-xs font-bold text-gray-500 uppercase">Clave ART</span>
-                                <span class="text-sm font-mono text-gray-800 break-all">${cliente.art || '<span class="text-gray-300 italic">No especificada</span>'}</span>
+                                <span class="block text-xs font-bold text-amber-900 uppercase tracking-wide">Clave ART</span>
+                                <span class="text-sm font-mono text-slate-700 break-all">${cliente.art || '<span class="text-slate-400 italic">No especificada</span>'}</span>
                             </div>
-                            ${cliente.art ? `<button onclick="window.copiarDato('${cliente.art}', this)" class="mt-2 bg-emerald-500 text-white py-1 px-2 rounded hover:bg-emerald-600 text-xs font-medium self-start transition-colors">Copiar ART</button>` : ''}
+                            ${cliente.art ? `<button onclick="window.copiarDato('${cliente.art}', this)" class="mt-3 bg-amber-700 text-white py-1.5 px-2.5 rounded-md hover:bg-amber-800 text-xs font-medium self-start transition-colors shadow-xs">Copiar ART</button>` : ''}
                         </div>
                     </div>
                 `;
@@ -141,11 +218,11 @@
             if (panel.classList.contains('hidden')) {
                 panel.classList.remove('hidden');
                 boton.textContent = '-';
-                boton.className = 'w-8 h-8 flex items-center justify-center bg-blue-600 text-white font-bold rounded-full hover:bg-blue-700 transition-colors focus:outline-none';
+                boton.className = 'w-8 h-8 flex items-center justify-center bg-amber-800 text-white font-bold rounded-full hover:bg-amber-900 transition-colors focus:outline-none shadow-xs';
             } else {
                 panel.classList.add('hidden');
                 boton.textContent = '+';
-                boton.className = 'w-8 h-8 flex items-center justify-center bg-blue-100 text-blue-700 font-bold rounded-full hover:bg-blue-200 transition-colors focus:outline-none';
+                boton.className = 'w-8 h-8 flex items-center justify-center bg-amber-100 text-amber-900 font-bold rounded-full hover:bg-amber-200 transition-colors focus:outline-none shadow-xs';
             }
         };
 
@@ -153,36 +230,49 @@
             navigator.clipboard.writeText(texto).then(() => {
                 const original = boton.textContent;
                 boton.textContent = "¡Copiado!";
-                boton.className = 'bg-green-700 text-white py-1 px-2 rounded text-xs font-medium';
+                boton.className = 'bg-emerald-700 text-white py-1.5 px-2.5 rounded-md text-xs font-medium shadow-xs';
                 setTimeout(() => {
                     boton.textContent = original;
                     boton.className = original.includes('CUIT') 
-                        ? 'bg-emerald-600 text-white px-2.5 py-1.5 rounded hover:bg-emerald-700 text-xs font-medium transition-colors' 
-                        : 'mt-2 bg-emerald-500 text-white py-1 px-2 rounded hover:bg-emerald-600 text-xs font-medium self-start transition-colors';
+                        ? 'bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 text-xs font-medium transition-colors shadow-xs' 
+                        : 'mt-3 bg-amber-700 text-white py-1.5 px-2.5 rounded-md hover:bg-amber-800 text-xs font-medium self-start transition-colors shadow-xs';
                 }, 1500);
             });
         };
 
         clientForm.addEventListener('submit', async function(e) {
             e.preventDefault();
-            const nuevoCliente = {
+            const cuitLimpio = cuitInput.value.trim();
+
+            if (!validarCUIT(cuitLimpio)) {
+                alert("⚠️ El CUIT ingresado no es válido. Verifique los dígitos o el formato.");
+                cuitInput.focus();
+                return;
+            }
+
+            const condicionSeleccionada = document.querySelector('input[name="condicion"]:checked');
+            const estadoSeleccionado = document.querySelector('input[name="estado"]:checked');
+            
+            const fechaHora = obtenerFechaHoraActual();
+
+            const datosCliente = {
                 nombre: nombreInput.value.trim(),
-                cuit: cuitInput.value.trim(),
+                cuit: cuitLimpio,
+                condicion: condicionSeleccionada ? condicionSeleccionada.value : '',
+                estado: estadoSeleccionado ? estadoSeleccionado.value : 'Activo',
                 banco: bancoInput.value.trim(),
                 arca: arcaInput.value.trim(),
                 rentas: rentasInput.value.trim(),
-                art: artInput.value.trim()
+                art: artInput.value.trim(),
+                ultimaActualizacion: fechaHora // Se guarda la fecha y hora de la operación actual
             };
 
             try {
                 if (idEditando === null) {
-                    await addDoc(collection(db, "clientes"), nuevoCliente);
+                    await addDoc(collection(db, "clientes"), datosCliente);
                 } else {
                     const docRef = doc(db, "clientes", idEditando);
-                    await updateDoc(docRef, nuevoCliente);
-                    idEditando = null;
-                    btnGuardar.textContent = "Guardar Cliente";
-                    btnCancelar.classList.add('hidden');
+                    await updateDoc(docRef, datosCliente);
                 }
                 window.limpiarFormulario();
                 await cargarClientes();
@@ -197,6 +287,22 @@
             if (!cliente) return;
             nombreInput.value = cliente.nombre;
             cuitInput.value = cliente.cuit;
+            
+            if (cliente.condicion) {
+                const radio = document.querySelector(`input[name="condicion"][value="${cliente.condicion}"]`);
+                if (radio) radio.checked = true;
+            } else {
+                document.querySelectorAll('input[name="condicion"]').forEach(r => r.checked = false);
+            }
+
+            if (cliente.estado) {
+                const radioEstado = document.querySelector(`input[name="estado"][value="${cliente.estado}"]`);
+                if (radioEstado) radioEstado.checked = true;
+            } else {
+                const radioActivo = document.querySelector('input[name="estado"][value="Activo"]');
+                if (radioActivo) radioActivo.checked = true;
+            }
+
             bancoInput.value = cliente.banco || '';
             arcaInput.value = cliente.arca || '';
             rentasInput.value = cliente.rentas || '';
@@ -204,6 +310,11 @@
             idEditando = id;
             btnGuardar.textContent = "Actualizar Cliente";
             btnCancelar.classList.remove('hidden');
+            
+            formContainer.classList.remove('hidden');
+            btnToggleForm.textContent = "✕ Cerrar Formulario";
+            btnToggleForm.className = "bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors shadow-sm";
+            
             nombreInput.focus();
             window.scrollTo({ top: 0, behavior: 'smooth' });
         };
@@ -223,6 +334,9 @@
         window.limpiarFormulario = function() {
             nombreInput.value = '';
             cuitInput.value = '';
+            document.querySelectorAll('input[name="condicion"]').forEach(r => r.checked = false);
+            const radioActivo = document.querySelector('input[name="estado"][value="Activo"]');
+            if (radioActivo) radioActivo.checked = true;
             bancoInput.value = '';
             arcaInput.value = '';
             rentasInput.value = '';
@@ -230,68 +344,270 @@
             idEditando = null;
             btnGuardar.textContent = "Guardar Cliente";
             btnCancelar.classList.add('hidden');
+            formContainer.classList.add('hidden');
+            btnToggleForm.textContent = "+ Nuevo Cliente";
+            btnToggleForm.className = "bg-amber-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-800 transition-colors shadow-sm";
+        };
+
+        // Función para generar e imprimir el reporte con el número de orden
+        window.ejecutarImpresion = function() {
+            const condicionSeleccionada = document.querySelector('input[name="filtroImpresionCondicion"]:checked').value;
+            const estadoSeleccionado = document.querySelector('input[name="filtroImpresionEstado"]:checked').value;
+
+            const filtrados = clientes.filter(c => {
+                let coincideCondicion = (condicionSeleccionada === 'Todos' || c.condicion === condicionSeleccionada);
+                let coincideEstado = (estadoSeleccionado === 'Todos' || c.estado === estadoSeleccionado);
+                return coincideCondicion && coincideEstado;
+            });
+
+            if (filtrados.length === 0) {
+                alert(`No se encontraron clientes con los filtros seleccionados.`);
+                return;
+            }
+
+            filtrados.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+
+            window.toggleModalImprimir();
+
+            let tituloFiltro = `Condición: ${condicionSeleccionada} | Estado: ${estadoSeleccionado}`;
+
+            let ventanaImpresion = window.open('', '_blank');
+            ventanaImpresion.document.write(`
+                <html>
+                <head>
+                    <title>Reporte de Clientes - Estudio Contable</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
+                        h2 { text-align: center; color: #78350f; margin-bottom: 5px; }
+                        h4 { text-align: center; color: #555; margin-top: 0; margin-bottom: 20px; }
+                        .estudio { font-size: 12px; font-weight: bold; text-transform: uppercase; color: #92400e; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
+                        th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+                        th { background-color: #fef3c7; color: #78350f; }
+                        tr:nth-child(even) { background-color: #fafaf9; }
+                        .text-center { text-align: center; }
+                    </style>
+                </head>
+                <body>
+                    <div class="estudio">Estudio Contable Laura B. Deiana</div>
+                    <h2>Listado de Clientes</h2>
+                    <h4>${tituloFiltro}</h4>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th class="text-center" style="width: 40px;">Nº</th>
+                                <th>Apellido y Nombre</th>
+                                <th>CUIT</th>
+                                <th>Condición</th>
+                                <th>Estado</th>
+                                <th>Banco</th>
+                                <th>ARCA</th>
+                                <th>Rentas</th>
+                                <th>ART</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${filtrados.map((c, idx) => `
+                                <tr>
+                                    <td class="text-center"><b>${idx + 1}</b></td>
+                                    <td><b>${c.nombre}</b></td>
+                                    <td>${c.cuit}</td>
+                                    <td>${c.condicion || '-'}</td>
+                                    <td>${c.estado || 'Activo'}</td>
+                                    <td>${c.banco || '-'}</td>
+                                    <td>${c.arca || '-'}</td>
+                                    <td>${c.rentas || '-'}</td>
+                                    <td>${c.art || '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    <script>
+                        window.onload = function() { window.print(); }
+                    <\/script>
+                </body>
+                </html>
+            `);
+            ventanaImpresion.document.close();
         };
 
         buscadorInput.addEventListener('input', function() {
             mostrarClientes(buscadorInput.value);
         });
 
-        // Carga inicial al iniciar la página
-        cargarClientes();
+        window.addEventListener('DOMContentLoaded', () => {
+            cargarClientes();
+            buscadorInput.focus();
+        });
     </script>
+    <style>
+        body {
+            background-image: linear-gradient(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.35)), url('https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1920&q=80');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+        }
+    </style>
 </head>
-<body class="bg-gray-100 min-h-screen p-6">
-    <div class="max-w-4xl mx-auto bg-white shadow-lg rounded-lg p-6">
-        <header class="mb-6 border-b pb-4">
-            <h1 class="text-2xl font-bold text-gray-800">Estudio Contble Laura B. Deiana</h1>
-            <p class="text-sm text-gray-500">Los datos sincronizados en tiempo real.</p>
+<body class="min-h-screen p-4 sm:p-6 text-slate-800 flex items-center justify-center">
+    <div class="max-w-4xl w-full mx-auto bg-white/95 backdrop-blur-md shadow-2xl rounded-2xl p-6 border border-amber-200/60 relative">
+        
+        <!-- Membrete y Título -->
+        <header class="mb-6 border-b border-amber-200/60 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+                <span class="text-xs font-bold tracking-wider uppercase text-amber-900 bg-amber-200/80 px-2.5 py-1 rounded-md">Estudio Contable</span>
+                <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1">Laura B. Deiana</h1>
+                <p class="text-xs text-slate-600 font-medium mt-0.5">Gestión de Clientes y Credenciales</p>
+            </div>
+            
+            <!-- Botones Superiores -->
+            <div class="flex items-center gap-2">
+                <!-- Botón de Abrir Selector de Impresión -->
+                <button onclick="window.toggleModalImprimir()" class="bg-amber-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-900 transition-colors shadow-sm flex items-center gap-1.5">
+                    🖨️ Imprimir Listado
+                </button>
+
+                <!-- Botón Desplegable para Agregar Nuevo Cliente -->
+                <button id="btnToggleForm" onclick="window.toggleFormulario()" class="bg-amber-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-800 transition-colors shadow-sm">
+                    + Nuevo Cliente
+                </button>
+            </div>
         </header>
 
-        <!-- Formulario -->
-        <form id="clientForm" class="bg-gray-50 p-4 rounded-lg mb-6 border border-gray-200">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Apellido y Nombre *</label>
-                    <input type="text" id="nombre" required class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <!-- Modal / Menú Flotante para Elegir qué Imprimir -->
+        <div id="modalImprimir" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-amber-200 animate-fadeIn">
+                <div class="flex justify-between items-center mb-4 border-b pb-3">
+                    <h3 class="font-bold text-amber-950 text-base">Opciones de Impresión</h3>
+                    <button onclick="window.toggleModalImprimir()" class="text-slate-400 hover:text-slate-700 font-bold text-lg">✕</button>
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">CUIT *</label>
-                    <input type="text" id="cuit" required placeholder="Ej: 20-12345678-9" class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Banco <span class="text-gray-400 text-xs">(Opcional)</span></label>
-                    <input type="text" id="banco" placeholder="Ej: Galicia, Macro..." class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Clave de ARCA <span class="text-gray-400 text-xs">(Opcional)</span></label>
-                    <input type="text" id="arca" placeholder="Clave fiscal" class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Clave de RENTAS <span class="text-gray-400 text-xs">(Opcional)</span></label>
-                    <input type="text" id="rentas" placeholder="Clave provincial" class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Clave de ART <span class="text-gray-400 text-xs">(Opcional)</span></label>
-                    <input type="text" id="art" placeholder="Clave aseguradora" class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-            </div>
-            <div class="flex justify-end space-x-2">
-                <button type="button" id="btnCancelar" onclick="window.limpiarFormulario()" class="hidden bg-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-400 text-sm">Cancelar</button>
-                <button type="submit" id="btnGuardar" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm font-medium">Guardar Cliente</button>
-            </div>
-        </form>
+                
+                <div class="space-y-4 mb-6">
+                    <!-- Condición Fiscal -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Condición Fiscal</label>
+                        <div class="space-y-2 bg-amber-50/50 p-3 rounded-xl border border-amber-100">
+                            <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+                                <input type="radio" name="filtroImpresionCondicion" value="Monotributista" checked class="text-amber-600 focus:ring-amber-500">
+                                <span>Monotributistas</span>
+                            </label>
+                            <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+                                <input type="radio" name="filtroImpresionCondicion" value="Responsable Inscripto" class="text-amber-600 focus:ring-amber-500">
+                                <span>Responsables Inscriptos</span>
+                            </label>
+                            <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+                                <input type="radio" name="filtroImpresionCondicion" value="Todos" class="text-amber-600 focus:ring-amber-500">
+                                <span>Ambas Condiciones (Todas)</span>
+                            </label>
+                        </div>
+                    </div>
 
-        <!-- Buscador -->
-        <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 mb-1">Búsqueda</label>
-            <input type="text" id="buscador" placeholder="Empezá a tipear para filtrar..." class="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <!-- Estado -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Estado del Cliente</label>
+                        <div class="space-y-2 bg-amber-50/50 p-3 rounded-xl border border-amber-100">
+                            <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+                                <input type="radio" name="filtroImpresionEstado" value="Activo" checked class="text-amber-600 focus:ring-amber-500">
+                                <span class="text-emerald-800 font-semibold">Solo Activos</span>
+                            </label>
+                            <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+                                <input type="radio" name="filtroImpresionEstado" value="Inactivo" class="text-amber-600 focus:ring-amber-500">
+                                <span class="text-rose-800 font-semibold">Solo Inactivos</span>
+                            </label>
+                            <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+                                <input type="radio" name="filtroImpresionEstado" value="Todos" class="text-amber-600 focus:ring-amber-500">
+                                <span>Todos (Activos e Inactivos)</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end space-x-2">
+                    <button onclick="window.toggleModalImprimir()" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-300 text-xs font-medium">Cancelar</button>
+                    <button onclick="window.ejecutarImpresion()" class="bg-amber-800 text-white px-5 py-2 rounded-lg hover:bg-amber-900 text-xs font-semibold shadow-xs">Generar e Imprimir</button>
+                </div>
+            </div>
         </div>
 
-        <!-- Contenedor -->
-        <div class="border border-gray-300 rounded-lg overflow-hidden shadow-sm bg-white">
+        <!-- Formulario Oculto por Defecto -->
+        <div id="formContainer" class="hidden mb-6 transition-all">
+            <form id="clientForm" class="bg-amber-50/90 p-5 rounded-xl border border-amber-200 shadow-inner">
+                <h2 class="text-sm font-bold text-amber-950 uppercase tracking-wide mb-3">Datos del Cliente</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Apellido y Nombre *</label>
+                        <input type="text" id="nombre" required class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">CUIT * <span class="text-slate-400 font-normal">(Validación automática)</span></label>
+                        <input type="text" id="cuit" required placeholder="Ej: 20123456789 o con guiones" class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm">
+                    </div>
+                    
+                    <!-- Radiobox para Condición Fiscal -->
+                    <div class="md:col-span-1 bg-white/70 p-3 rounded-lg border border-amber-200">
+                        <label class="block text-xs font-semibold text-slate-700 mb-2">Condición Fiscal</label>
+                        <div class="flex flex-wrap gap-4">
+                            <label class="flex items-center space-x-2 cursor-pointer text-sm font-medium text-slate-700">
+                                <input type="radio" name="condicion" value="Monotributista" class="w-4 h-4 text-amber-600 focus:ring-amber-500 border-amber-300">
+                                <span>Monotributista</span>
+                            </label>
+                            <label class="flex items-center space-x-2 cursor-pointer text-sm font-medium text-slate-700">
+                                <input type="radio" name="condicion" value="Responsable Inscripto" class="w-4 h-4 text-amber-600 focus:ring-amber-500 border-amber-300">
+                                <span>Responsable Inscripto</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Radiobox para Estado del Cliente (Activo / Inactivo) -->
+                    <div class="md:col-span-1 bg-white/70 p-3 rounded-lg border border-amber-200">
+                        <label class="block text-xs font-semibold text-slate-700 mb-2">Estado</label>
+                        <div class="flex flex-wrap gap-4">
+                            <label class="flex items-center space-x-2 cursor-pointer text-sm font-medium text-slate-700">
+                                <input type="radio" name="estado" value="Activo" checked class="w-4 h-4 text-emerald-600 focus:ring-emerald-500 border-amber-300">
+                                <span class="text-emerald-800 font-semibold">Activo</span>
+                            </label>
+                            <label class="flex items-center space-x-2 cursor-pointer text-sm font-medium text-slate-700">
+                                <input type="radio" name="estado" value="Inactivo" class="w-4 h-4 text-rose-600 focus:ring-rose-500 border-amber-300">
+                                <span class="text-rose-800 font-semibold">Inactivo</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Banco <span class="text-slate-400 font-normal">(Opcional)</span></label>
+                        <input type="text" id="banco" placeholder="Ej: Galicia, Macro..." class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Clave de ARCA <span class="text-slate-400 font-normal">(Opcional)</span></label>
+                        <input type="text" id="arca" placeholder="Clave fiscal" class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Clave de RENTAS <span class="text-slate-400 font-normal">(Opcional)</span></label>
+                        <input type="text" id="rentas" placeholder="Clave provincial" class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Clave de ART <span class="text-slate-400 font-normal">(Opcional)</span></label>
+                        <input type="text" id="art" placeholder="Clave aseguradora" class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm">
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button type="button" id="btnCancelar" onclick="window.limpiarFormulario()" class="hidden bg-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-300 text-xs font-medium">Cancelar</button>
+                    <button type="submit" id="btnGuardar" class="bg-amber-700 text-white px-4 py-2 rounded-lg hover:bg-amber-800 text-xs font-medium shadow-xs">Guardar Cliente</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Buscador Predeterminado -->
+        <div class="mb-5">
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">Búsqueda Rápida</label>
+            <input type="text" id="buscador" placeholder="Empezá a tipear nombre, CUIT, condición, estado, banco o clave..." class="w-full px-4 py-2.5 bg-amber-50/50 border border-amber-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm placeholder-slate-400 shadow-xs">
+        </div>
+
+        <!-- Contenedor Principal de la Lista -->
+        <div class="border border-amber-200 rounded-xl overflow-hidden shadow-xs bg-amber-50/20">
             <div class="max-h-[500px] overflow-y-auto p-4 space-y-3" id="contenedorClientes">
                 <!-- Cargando desde Firebase -->
-                <div class="py-6 text-center text-gray-400">Conectando con la base de datos...</div>
+                <div class="py-6 text-center text-slate-500 font-medium">Conectando con la base de datos...</div>
             </div>
         </div>
     </div>
