@@ -22,7 +22,8 @@
         import { 
             getAuth, 
             GoogleAuthProvider, 
-            signInWithPopup, 
+            signInWithRedirect, 
+            getRedirectResult,
             signOut, 
             onAuthStateChanged 
         } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
@@ -46,7 +47,7 @@
 
         // ==========================================
         // LISTA BLANCA DE CORREOS PERMITIDOS
-        // (Asegúrate de poner aquí tus correos exactos)
+        // (Asegúrate de poner tus correos exactos en minúsculas)
         // ==========================================
         const CORREOS_AUTORIZADOS = [
             "tu-correo@gmail.com",
@@ -77,14 +78,23 @@
         const btnGuardar = document.getElementById('btnGuardar');
         const modalImprimir = document.getElementById('modalImprimir');
 
+        // Capturar resultado de redirección al volver de Google
+        getRedirectResult(auth).catch((error) => {
+            console.error("Error en resultado de redirección:", error);
+            mostrarToast("Error al procesar el inicio de sesión.", "error");
+        });
+
         // ==========================================
         // MANEJO DE SESIÓN Y AUTENTICACIÓN
         // ==========================================
         onAuthStateChanged(auth, (user) => {
             if (user) {
-                // Validación por lista blanca de correos
-                if (CORREOS_AUTORIZADOS.length > 0 && !CORREOS_AUTORIZADOS.includes(user.email)) {
-                    mostrarToast("Acceso denegado: El correo no está autorizado.", "error");
+                const userEmail = (user.email || '').toLowerCase().trim();
+                const autorizadosNormalizados = CORREOS_AUTORIZADOS.map(email => email.toLowerCase().trim());
+
+                // Validación por lista blanca
+                if (autorizadosNormalizados.length > 0 && !autorizadosNormalizados.includes(userEmail)) {
+                    mostrarToast(`Acceso denegado: El correo ${user.email} no está autorizado.`, "error");
                     signOut(auth);
                     return;
                 }
@@ -99,7 +109,6 @@
                 loginSection.classList.remove('hidden');
                 appSection.classList.add('hidden');
                 
-                // Cancelar subscripción de la base de datos si cierra sesión
                 if (unsubscribeRealtime) {
                     unsubscribeRealtime();
                     unsubscribeRealtime = null;
@@ -109,10 +118,10 @@
 
         window.loginConGoogle = async function() {
             try {
-                await signInWithPopup(auth, provider);
+                await signInWithRedirect(auth, provider);
             } catch (error) {
                 console.error("Error al iniciar sesión: ", error);
-                mostrarToast("No se pudo iniciar sesión con Google.", "error");
+                mostrarToast("No se pudo redirigir al inicio de sesión.", "error");
             }
         };
 
@@ -130,7 +139,7 @@
         function mostrarToast(mensaje, tipo = 'exito') {
             const toast = document.createElement('div');
             const bgClass = tipo === 'exito' ? 'bg-emerald-800' : 'bg-rose-800';
-            toast.className = `fixed bottom-5 right-5 ${bgClass} text-white px-4 py-3 rounded-xl shadow-lg z-50 text-sm font-medium transition-all duration-300 transform translate-y-2 opacity-0`;
+            toast.className = `fixed bottom-5 right-5 ${bgClass} text-white px-4 py-3 rounded-xl shadow-lg z-50 text-sm font-medium transition-all duration-300 transform translate-y-2 opacity-0 max-w-sm`;
             toast.textContent = mensaje;
             document.body.appendChild(toast);
 
@@ -141,7 +150,7 @@
             setTimeout(() => {
                 toast.classList.add('opacity-0');
                 setTimeout(() => toast.remove(), 300);
-            }, 3000);
+            }, 4000);
         }
 
         // Auto-formateador visual de CUIT (XX-XXXXXXXX-X)
@@ -166,11 +175,10 @@
                 mostrarClientes(buscadorInput.value);
             }, (error) => {
                 console.error("Error en tiempo real: ", error);
-                contenedorClientes.innerHTML = `<div class="py-6 text-center text-rose-600 font-medium">Error de permisos o conexión con la base de datos.</div>`;
+                contenedorClientes.innerHTML = `<div class="py-6 text-center text-rose-600 font-medium">Error de permisos o conexión con Firestore.</div>`;
             });
         }
 
-        // Opciones UI de formulario y modal
         window.toggleFormulario = function() {
             if (formContainer.classList.contains('hidden')) {
                 formContainer.classList.remove('hidden');
@@ -196,7 +204,6 @@
             return `${dia}/${mes}/${anio} ${horas}:${minutos}`;
         }
 
-        // Validar CUIT (Módulo 11)
         function validarCUIT(cuit) {
             let cleanerCuit = cuit.replace(/[^0-9]/g, '');
             if (cleanerCuit.length !== 11) return false;
@@ -220,7 +227,6 @@
             return resultado === digitoVerificador;
         }
 
-        // Renderizar lista de clientes
         window.mostrarClientes = function(filtro = '') {
             clientes.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es', { sensitivity: 'base' }));
             contenedorClientes.innerHTML = '';
@@ -325,10 +331,8 @@
             }
         };
 
-        // Copiar dato al portapapeles (Elimina guiones automáticamente si es CUIT)
         window.copiarDato = function(texto, boton) {
             let textoACopiar = texto;
-            
             if (validarCUIT(texto)) {
                 textoACopiar = texto.replace(/-/g, '');
             }
@@ -346,7 +350,6 @@
             });
         };
 
-        // Enviar formulario (Agregar / Modificar)
         clientForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             const cuitLimpio = cuitInput.value.trim();
@@ -456,7 +459,6 @@
             btnToggleForm.className = "bg-amber-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-amber-800 transition-colors shadow-sm";
         };
 
-        // Generación de Reporte para Impresión
         window.ejecutarImpresion = function() {
             const condicionSeleccionada = document.querySelector('input[name="filtroImpresionCondicion"]:checked').value;
             const estadoSeleccionado = document.querySelector('input[name="filtroImpresionEstado"]:checked').value;
@@ -553,9 +555,7 @@
 </head>
 <body class="min-h-screen text-slate-800">
 
-    <!-- ========================================== -->
     <!-- PANTALLA DE LOGIN -->
-    <!-- ========================================== -->
     <div id="loginSection" class="min-h-screen flex items-center justify-center p-4">
         <div class="bg-white/95 backdrop-blur-md p-8 rounded-2xl shadow-2xl max-w-md w-full text-center border border-amber-200">
             <span class="text-xs font-bold tracking-wider uppercase text-amber-900 bg-amber-200/80 px-2.5 py-1 rounded-md">Estudio Contable</span>
@@ -574,13 +574,10 @@
         </div>
     </div>
 
-    <!-- ========================================== -->
     <!-- APLICACIÓN PRINCIPAL (PANEL SPA) -->
-    <!-- ========================================== -->
     <div id="appSection" class="hidden min-h-screen p-4 sm:p-6 flex items-center justify-center">
         <div class="max-w-4xl w-full mx-auto bg-white/95 backdrop-blur-md shadow-2xl rounded-2xl p-6 border border-amber-200/60 relative">
             
-            <!-- Membrete y Usuario -->
             <header class="mb-6 border-b border-amber-200/60 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <span class="text-xs font-bold tracking-wider uppercase text-amber-900 bg-amber-200/80 px-2.5 py-1 rounded-md">Estudio Contable</span>
@@ -588,7 +585,6 @@
                     <p class="text-xs text-slate-600 font-medium mt-0.5">Usuario: <span id="userEmail" class="font-bold text-amber-900"></span></p>
                 </div>
                 
-                <!-- Acciones Principales -->
                 <div class="flex items-center gap-2">
                     <button onclick="window.toggleModalImprimir()" class="bg-amber-800 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-amber-900 transition-colors shadow-sm flex items-center gap-1.5">
                         🖨️ Imprimir
@@ -604,7 +600,7 @@
                 </div>
             </header>
 
-            <!-- Modal para Filtros de Impresión -->
+            <!-- Modal Filtros Impresión -->
             <div id="modalImprimir" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div class="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-amber-200">
                     <div class="flex justify-between items-center mb-4 border-b pb-3">
@@ -657,7 +653,7 @@
                 </div>
             </div>
 
-            <!-- Formulario para Agregar / Editar -->
+            <!-- Formulario Cliente -->
             <div id="formContainer" class="hidden mb-6 transition-all">
                 <form id="clientForm" class="bg-amber-50/90 p-5 rounded-xl border border-amber-200 shadow-inner">
                     <h2 class="text-sm font-bold text-amber-950 uppercase tracking-wide mb-3">Datos del Cliente</h2>
@@ -729,7 +725,7 @@
                 <input type="text" id="buscador" placeholder="🔍 Buscar por Nombre, CUIT, Clave, Banco, Condición..." class="w-full px-4 py-2.5 bg-amber-50/50 border border-amber-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm">
             </div>
 
-            <!-- Listado de Clientes -->
+            <!-- Listado -->
             <div id="contenedorClientes" class="space-y-3">
                 <div class="py-6 text-center text-slate-400 font-medium">Cargando datos...</div>
             </div>
