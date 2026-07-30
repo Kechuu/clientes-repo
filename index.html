@@ -47,12 +47,22 @@
 
         let clientes = [];
         let idEditando = null;
+        let idClienteHonorarios = null;
         let unsubscribeRealtime = null;
+
+        // Arreglos para períodos dinámicos
+        let periodosModal = [];
+        let periodosFormNuevo = [];
 
         // Referencias DOM
         let loginSection, appSection, userEmailSpan, clientForm, formContainer, btnToggleForm;
-        let nombreInput, cuitInput, bancoInput, arcaInput, rentasInput, artInput, buscadorInput;
-        let contenedorClientes, btnCancelar, btnGuardar, modalImprimir;
+        let nombreInput, cuitInput, bancoInput, arcaInput, rentasInput, buscadorInput;
+        let contenedorClientes, btnCancelar, btnGuardar, modalImprimir, modalHonorarios;
+        let formHonorarios, honorariosFecha, honorariosMonto, listaHistorialHonorarios;
+        let inputPeriodoModal, containerPeriodosModal, btnAgregarPeriodoModal;
+        
+        // Referencias para honorarios en Formulario Nuevo
+        let fechaHonorarioNuevoInput, montoHonorarioNuevoInput, inputPeriodoForm, containerPeriodosForm, btnAgregarPeriodoForm, seccionHonorariosForm;
 
         window.addEventListener('DOMContentLoaded', () => {
             // Inicializar Referencias DOM
@@ -67,12 +77,47 @@
             bancoInput = document.getElementById('banco');
             arcaInput = document.getElementById('arca');
             rentasInput = document.getElementById('rentas');
-            artInput = document.getElementById('art');
             buscadorInput = document.getElementById('buscador');
             contenedorClientes = document.getElementById('contenedorClientes');
             btnCancelar = document.getElementById('btnCancelar');
             btnGuardar = document.getElementById('btnGuardar');
             modalImprimir = document.getElementById('modalImprimir');
+            modalHonorarios = document.getElementById('modalHonorarios');
+            formHonorarios = document.getElementById('formHonorarios');
+            honorariosFecha = document.getElementById('honorariosFecha');
+            honorariosMonto = document.getElementById('honorariosMonto');
+            listaHistorialHonorarios = document.getElementById('listaHistorialHonorarios');
+
+            // Elementos Períodos Modal
+            inputPeriodoModal = document.getElementById('input-periodo');
+            containerPeriodosModal = document.getElementById('periodos-container');
+            btnAgregarPeriodoModal = document.getElementById('btn-agregar-periodo');
+
+            // Elementos Honorarios Formulario Nuevo
+            seccionHonorariosForm = document.getElementById('seccionHonorariosForm');
+            fechaHonorarioNuevoInput = document.getElementById('fechaHonorarioNuevo');
+            montoHonorarioNuevoInput = document.getElementById('montoHonorarioNuevo');
+            inputPeriodoForm = document.getElementById('input-periodo-form');
+            containerPeriodosForm = document.getElementById('periodos-container-form');
+            btnAgregarPeriodoForm = document.getElementById('btn-agregar-periodo-form');
+
+            // Eventos Períodos Modal
+            btnAgregarPeriodoModal.addEventListener('click', () => agregarPeriodo(inputPeriodoModal, periodosModal, containerPeriodosModal, 'modal'));
+            inputPeriodoModal.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    agregarPeriodo(inputPeriodoModal, periodosModal, containerPeriodosModal, 'modal');
+                }
+            });
+
+            // Eventos Períodos Formulario Nuevo
+            btnAgregarPeriodoForm.addEventListener('click', () => agregarPeriodo(inputPeriodoForm, periodosFormNuevo, containerPeriodosForm, 'form'));
+            inputPeriodoForm.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    agregarPeriodo(inputPeriodoForm, periodosFormNuevo, containerPeriodosForm, 'form');
+                }
+            });
 
             // Formateador CUIT
             cuitInput.addEventListener('input', (e) => {
@@ -91,7 +136,7 @@
                 mostrarClientes(buscadorInput.value);
             });
 
-            // Submit del Formulario
+            // Submit del Formulario Cliente
             clientForm.addEventListener('submit', async function(e) {
                 e.preventDefault();
                 const cuitLimpio = cuitInput.value.trim();
@@ -113,15 +158,41 @@
                     banco: bancoInput.value.trim(),
                     arca: arcaInput.value.trim(),
                     rentas: rentasInput.value.trim(),
-                    art: artInput.value.trim(),
                     ultimaActualizacion: obtenerFechaHoraActual()
                 };
 
                 try {
                     if (idEditando === null) {
+                        // Es un cliente nuevo
+                        const montoNuevo = parseFloat(montoHonorarioNuevoInput.value);
+                        let honorariosIniciales = [];
+
+                        if (!isNaN(montoNuevo) && montoNuevo > 0) {
+                            if (periodosFormNuevo.length === 0) {
+                                mostrarToast("Agregaste un monto pero no ingresaste ningún período para el pago.", "error");
+                                inputPeriodoForm.focus();
+                                return;
+                            }
+
+                            const medioPagoNuevo = document.querySelector('input[name="medio_pago_form"]:checked').value;
+                            const tipoComprobanteNuevo = document.querySelector('input[name="tipo_comprobante_form"]:checked').value;
+
+                            honorariosIniciales.push({
+                                fecha: fechaHonorarioNuevoInput.value || new Date().toISOString().split('T')[0],
+                                periodos: [...periodosFormNuevo],
+                                periodoTexto: periodosFormNuevo.join(', '),
+                                monto: montoNuevo,
+                                medioPago: medioPagoNuevo,
+                                tipoComprobante: tipoComprobanteNuevo,
+                                fechaRegistro: obtenerFechaHoraActual()
+                            });
+                        }
+
+                        datosCliente.honorarios = honorariosIniciales;
                         await addDoc(collection(db, "clientes"), datosCliente);
                         mostrarToast("Cliente registrado exitosamente.");
                     } else {
+                        // Modificación de cliente existente
                         const docRef = doc(db, "clientes", idEditando);
                         await updateDoc(docRef, datosCliente);
                         mostrarToast("Cliente actualizado exitosamente.");
@@ -130,6 +201,55 @@
                 } catch (error) {
                     console.error("Error al guardar: ", error);
                     mostrarToast("Hubo un error al guardar en la base de datos.", "error");
+                }
+            });
+
+            // Submit Formulario Cargar Honorarios Modal
+            formHonorarios.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                if (!idClienteHonorarios) return;
+
+                const cliente = clientes.find(c => c.id === idClienteHonorarios);
+                if (!cliente) return;
+
+                if (periodosModal.length === 0) {
+                    mostrarToast("Debes agregar al menos un período.", "error");
+                    inputPeriodoModal.focus();
+                    return;
+                }
+
+                const medioPago = document.querySelector('input[name="medio_pago"]:checked').value;
+                const tipoComprobante = document.querySelector('input[name="tipo_comprobante"]:checked').value;
+
+                const nuevoPago = {
+                    fecha: honorariosFecha.value,
+                    periodos: [...periodosModal],
+                    periodoTexto: periodosModal.join(', '),
+                    monto: parseFloat(honorariosMonto.value),
+                    medioPago: medioPago,
+                    tipoComprobante: tipoComprobante,
+                    fechaRegistro: obtenerFechaHoraActual()
+                };
+
+                const historialActual = cliente.honorarios || [];
+                historialActual.push(nuevoPago);
+
+                try {
+                    const docRef = doc(db, "clientes", idClienteHonorarios);
+                    await updateDoc(docRef, {
+                        honorarios: historialActual,
+                        ultimaActualizacion: obtenerFechaHoraActual()
+                    });
+                    
+                    mostrarToast("Pago de honorarios registrado correctamente.");
+                    honorariosFecha.value = '';
+                    honorariosMonto.value = '';
+                    periodosModal = [];
+                    renderizarPeriodos(periodosModal, containerPeriodosModal, 'modal');
+                    renderizarHistorialModal(historialActual);
+                } catch (error) {
+                    console.error("Error al registrar honorario: ", error);
+                    mostrarToast("No se pudo guardar el pago.", "error");
                 }
             });
 
@@ -142,6 +262,41 @@
                 suscribirClientes();
             }
         });
+
+        // ==========================================
+        // GESTIÓN DE PERÍODOS DINÁMICOS
+        // ==========================================
+        function agregarPeriodo(inputElem, arrayTarget, containerElem, tipo) {
+            const valor = inputElem.value.trim();
+            if (valor !== '') {
+                arrayTarget.push(valor);
+                inputElem.value = '';
+                renderizarPeriodos(arrayTarget, containerElem, tipo);
+            }
+        }
+
+        window.eliminarPeriodo = function(index, tipo) {
+            if (tipo === 'modal') {
+                periodosModal.splice(index, 1);
+                renderizarPeriodos(periodosModal, containerPeriodosModal, 'modal');
+            } else {
+                periodosFormNuevo.splice(index, 1);
+                renderizarPeriodos(periodosFormNuevo, containerPeriodosForm, 'form');
+            }
+        };
+
+        function renderizarPeriodos(arrayTarget, containerElem, tipo) {
+            containerElem.innerHTML = '';
+            arrayTarget.forEach((periodo, index) => {
+                const chip = document.createElement('div');
+                chip.className = 'bg-amber-100 text-amber-900 px-2.5 py-1 rounded-full flex items-center gap-1.5 text-xs font-semibold border border-amber-200';
+                chip.innerHTML = `
+                    <span>${periodo}</span>
+                    <button type="button" onclick="eliminarPeriodo(${index}, '${tipo}')" class="text-rose-600 font-bold hover:text-rose-800 focus:outline-none ml-1">✕</button>
+                `;
+                containerElem.appendChild(chip);
+            });
+        }
 
         // ==========================================
         // MANEJO DE SESIÓN Y AUTENTICACIÓN LOCAL
@@ -240,6 +395,55 @@
             modalImprimir.classList.toggle('hidden');
         };
 
+        window.abrirModalHonorarios = function(id) {
+            idClienteHonorarios = id;
+            const cliente = clientes.find(c => c.id === id);
+            if (!cliente) return;
+
+            document.getElementById('nombreClienteHonorarios').textContent = cliente.nombre;
+            
+            const hoy = new Date().toISOString().split('T')[0];
+            honorariosFecha.value = hoy;
+            honorariosMonto.value = '';
+            periodosModal = [];
+            renderizarPeriodos(periodosModal, containerPeriodosModal, 'modal');
+
+            renderizarHistorialModal(cliente.honorarios || []);
+            modalHonorarios.classList.remove('hidden');
+        };
+
+        window.cerrarModalHonorarios = function() {
+            modalHonorarios.classList.add('hidden');
+            idClienteHonorarios = null;
+        };
+
+        function renderizarHistorialModal(historial) {
+            listaHistorialHonorarios.innerHTML = '';
+            if (!historial || historial.length === 0) {
+                listaHistorialHonorarios.innerHTML = `<p class="text-xs text-slate-400 italic text-center py-2">No hay pagos registrados anteriormente.</p>`;
+                return;
+            }
+
+            const ordenados = [...historial].reverse();
+            ordenados.forEach(pago => {
+                const item = document.createElement('div');
+                item.className = 'flex justify-between items-center bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs';
+                
+                const periodosMostrar = pago.periodoTexto || (pago.periodos ? pago.periodos.join(', ') : pago.periodo);
+                const medioPagoTexto = pago.medioPago ? `• ${pago.medioPago}` : '';
+                const compTexto = pago.tipoComprobante ? `• ${pago.tipoComprobante}` : '';
+
+                item.innerHTML = `
+                    <div>
+                        <span class="font-bold text-slate-800">Períodos: ${periodosMostrar}</span>
+                        <span class="block text-[11px] text-slate-500">Fecha: ${pago.fecha} ${medioPagoTexto} ${compTexto}</span>
+                    </div>
+                    <span class="font-bold text-emerald-700 text-sm">$${Number(pago.monto).toLocaleString('es-AR', {minimumFractionDigits: 2})}</span>
+                `;
+                listaHistorialHonorarios.appendChild(item);
+            });
+        }
+
         function obtenerFechaHoraActual() {
             const ahora = new Date();
             const dia = String(ahora.getDate()).padStart(2, '0');
@@ -284,7 +488,6 @@
                 (c.banco && c.banco.toLowerCase().includes(textoFiltro)) ||
                 (c.arca && c.arca.toLowerCase().includes(textoFiltro)) ||
                 (c.rentas && c.rentas.toLowerCase().includes(textoFiltro)) ||
-                (c.art && c.art.toLowerCase().includes(textoFiltro)) ||
                 (c.condicion && c.condicion.toLowerCase().includes(textoFiltro)) ||
                 (c.estado && c.estado.toLowerCase().includes(textoFiltro))
             );
@@ -299,12 +502,19 @@
                 card.className = 'border border-amber-200/80 rounded-xl p-4 bg-white/95 shadow-sm hover:shadow-md transition-shadow';
                 
                 const condicionTexto = cliente.condicion ? ` (${cliente.condicion})` : '';
-                const esActivo = cliente.estado === 'Activo';
+                const esActivo = (cliente.estado === 'Activo' || !cliente.estado);
                 const estadoBadge = esActivo 
                     ? `<span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Activo</span>`
                     : `<span class="bg-rose-100 text-rose-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Inactivo</span>`;
 
                 const ultimaAct = cliente.ultimaActualizacion ? `• Últ. Act: ${cliente.ultimaActualizacion}` : '';
+
+                let textoUltimoPago = '<span class="text-slate-400 italic">Sin pagos cargados</span>';
+                if (cliente.honorarios && cliente.honorarios.length > 0) {
+                    const ultimo = cliente.honorarios[cliente.honorarios.length - 1];
+                    const pTexto = ultimo.periodoTexto || (ultimo.periodos ? ultimo.periodos.join(', ') : ultimo.periodo);
+                    textoUltimoPago = `<span class="font-bold text-emerald-800">$${Number(ultimo.monto).toLocaleString('es-AR', {minimumFractionDigits: 2})}</span> <span class="text-xs text-slate-500">(${pTexto} - ${ultimo.fecha})</span>`;
+                }
 
                 card.innerHTML = `
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -350,12 +560,12 @@
                             </div>
                             ${cliente.rentas ? `<button onclick="window.copiarDato('${cliente.rentas}', this)" class="mt-3 bg-amber-700 text-white py-1.5 px-2.5 rounded-md hover:bg-amber-800 text-xs font-medium self-start transition-colors shadow-xs">Copiar Rentas</button>` : ''}
                         </div>
-                        <div class="bg-amber-50/70 p-3 rounded-lg border border-amber-100/80 flex flex-col justify-between">
+                        <div class="bg-emerald-50/80 p-3 rounded-lg border border-emerald-200/80 flex flex-col justify-between">
                             <div>
-                                <span class="block text-xs font-bold text-amber-900 uppercase tracking-wide">Clave ART</span>
-                                <span class="text-sm font-mono text-slate-700 break-all">${cliente.art || '<span class="text-slate-400 italic">No especificada</span>'}</span>
+                                <span class="block text-xs font-bold text-emerald-900 uppercase tracking-wide">Honorarios</span>
+                                <span class="text-sm font-mono text-slate-700 break-all mt-1 block">${textoUltimoPago}</span>
                             </div>
-                            ${cliente.art ? `<button onclick="window.copiarDato('${cliente.art}', this)" class="mt-3 bg-amber-700 text-white py-1.5 px-2.5 rounded-md hover:bg-amber-800 text-xs font-medium self-start transition-colors shadow-xs">Copiar ART</button>` : ''}
+                            <button onclick="window.abrirModalHonorarios('${cliente.id}')" class="mt-3 bg-emerald-700 text-white py-1.5 px-2.5 rounded-md hover:bg-emerald-800 text-xs font-medium self-start transition-colors shadow-xs">Cargar Honorarios</button>
                         </div>
                     </div>
                 `;
@@ -421,8 +631,10 @@
             bancoInput.value = cliente.banco || '';
             arcaInput.value = cliente.arca || '';
             rentasInput.value = cliente.rentas || '';
-            artInput.value = cliente.art || '';
             idEditando = id;
+
+            seccionHonorariosForm.classList.add('hidden');
+
             btnGuardar.textContent = "Actualizar Cliente";
             btnCancelar.classList.remove('hidden');
             
@@ -455,7 +667,13 @@
             bancoInput.value = '';
             arcaInput.value = '';
             rentasInput.value = '';
-            artInput.value = '';
+            
+            fechaHonorarioNuevoInput.value = new Date().toISOString().split('T')[0];
+            montoHonorarioNuevoInput.value = '';
+            periodosFormNuevo = [];
+            renderizarPeriodos(periodosFormNuevo, containerPeriodosForm, 'form');
+            seccionHonorariosForm.classList.remove('hidden');
+
             idEditando = null;
             btnGuardar.textContent = "Guardar Cliente";
             btnCancelar.classList.add('hidden');
@@ -464,266 +682,437 @@
             btnToggleForm.className = "bg-amber-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-amber-800 transition-colors shadow-sm";
         };
 
+        // ==========================================
+        // FUNCIÓN DE IMPRESIÓN REVISADA Y CORREGIDA
+        // ==========================================
         window.ejecutarImpresion = function() {
-            const condicionSeleccionada = document.querySelector('input[name="filtroImpresionCondicion"]:checked').value;
-            const estadoSeleccionado = document.querySelector('input[name="filtroImpresionEstado"]:checked').value;
+            const radCond = document.querySelector('input[name="filtroImpresionCondicion"]:checked');
+            const radEst = document.querySelector('input[name="filtroImpresionEstado"]:checked');
 
+            const condicionFiltro = radCond ? radCond.value : 'Todos';
+            const estadoFiltro = radEst ? radEst.value : 'Todos';
+
+            // Filtrado riguroso
             const filtrados = clientes.filter(c => {
-                let coincideCondicion = (condicionSeleccionada === 'Todos' || c.condicion === condicionSeleccionada);
-                let coincideEstado = (estadoSeleccionado === 'Todos' || c.estado === estadoSeleccionado);
-                return coincideCondicion && coincideEstado;
+                const condCliente = c.condicion || '';
+                const estCliente = c.estado || 'Activo'; // Por defecto activo si está indefinido
+
+                let coincideCond = (condicionFiltro === 'Todos') || (condCliente === condicionFiltro);
+                let coincideEst = (estadoFiltro === 'Todos') || (estCliente === estadoFiltro);
+
+                return coincideCond && coincideEst;
             });
 
             if (filtrados.length === 0) {
-                mostrarToast("No se encontraron clientes con los filtros seleccionados.", "error");
+                mostrarToast("No hay clientes que coincidan con los filtros seleccionados.", "error");
                 return;
             }
 
+            // Ordenar alfabéticamente
             filtrados.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es', { sensitivity: 'base' }));
 
             window.toggleModalImprimir();
 
-            let tituloFiltro = `Condición: ${condicionSeleccionada} | Estado: ${estadoSeleccionado}`;
+            let txtCondicion = condicionFiltro === 'R.I.' ? 'Responsables Inscriptos' : condicionFiltro;
+            let tituloFiltro = `Filtros aplicados - Condición: ${txtCondicion} | Estado: ${estadoFiltro}`;
 
             let ventanaImpresion = window.open('', '_blank');
-            ventanaImpresion.document.write(`
-                <html>
+            if (!ventanaImpresion) {
+                mostrarToast("Por favor habilita las ventanas emergentes en tu navegador.", "error");
+                return;
+            }
+
+            const htmlContenido = `
+                <!DOCTYPE html>
+                <html lang="es">
                 <head>
+                    <meta charset="UTF-8">
                     <title>Reporte de Clientes - Estudio Contable</title>
                     <style>
-                        body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
-                        h2 { text-align: center; color: #78350f; margin-bottom: 5px; }
-                        h4 { text-align: center; color: #555; margin-top: 0; margin-bottom: 20px; }
-                        .estudio { font-size: 12px; font-weight: bold; text-transform: uppercase; color: #92400e; }
-                        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
-                        th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
-                        th { background-color: #fef3c7; color: #78350f; }
-                        tr:nth-child(even) { background-color: #fafaf9; }
+                        body { font-family: Arial, sans-serif; padding: 20px; color: #333; margin: 0; }
+                        .estudio { font-size: 11px; font-weight: bold; text-transform: uppercase; color: #92400e; margin-bottom: 5px; }
+                        h2 { text-align: center; color: #78350f; margin: 5px 0; font-size: 20px; }
+                        h4 { text-align: center; color: #666; margin: 0 0 20px 0; font-size: 12px; font-weight: normal; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }
+                        th, td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; }
+                        th { background-color: #fef3c7; color: #78350f; font-weight: bold; text-transform: uppercase; font-size: 10px; }
+                        tr:nth-child(even) { background-color: #f8fafc; }
                         .text-center { text-align: center; }
+                        .badge { padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; }
+                        .badge-activo { background-color: #d1fae5; color: #065f46; }
+                        .badge-inactivo { background-color: #ffe4e6; color: #9f1239; }
+                        @media print {
+                            body { padding: 0; }
+                            @page { margin: 1.5cm; }
+                        }
                     </style>
                 </head>
                 <body>
                     <div class="estudio">Estudio Contable Laura B. Deiana</div>
                     <h2>Listado de Clientes</h2>
-                    <h4>${tituloFiltro}</h4>
+                    <h4>${tituloFiltro} (Total: ${filtrados.length})</h4>
                     <table>
                         <thead>
                             <tr>
-                                <th class="text-center" style="width: 40px;">Nº</th>
-                                <th>Apellido y Nombre</th>
+                                <th style="width: 30px;">#</th>
+                                <th>Nombre / Razón Social</th>
                                 <th>CUIT</th>
                                 <th>Condición</th>
                                 <th>Estado</th>
                                 <th>Banco</th>
                                 <th>ARCA</th>
                                 <th>Rentas</th>
-                                <th>ART</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${filtrados.map((c, idx) => `
+                            ${filtrados.map((c, i) => `
                                 <tr>
-                                    <td class="text-center"><b>${idx + 1}</b></td>
-                                    <td><b>${c.nombre}</b></td>
-                                    <td>${c.cuit}</td>
+                                    <td class="text-center">${i + 1}</td>
+                                    <td><strong>${c.nombre || ''}</strong></td>
+                                    <td>${c.cuit || ''}</td>
                                     <td>${c.condicion || '-'}</td>
-                                    <td>${c.estado || 'Activo'}</td>
+                                    <td class="text-center">
+                                        <span class="badge ${c.estado === 'Inactivo' ? 'badge-inactivo' : 'badge-activo'}">
+                                            ${c.estado || 'Activo'}
+                                        </span>
+                                    </td>
                                     <td>${c.banco || '-'}</td>
                                     <td>${c.arca || '-'}</td>
                                     <td>${c.rentas || '-'}</td>
-                                    <td>${c.art || '-'}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
                     </table>
-                    <script>
-                        window.onload = function() { window.print(); }
-                    <\/script>
                 </body>
                 </html>
-            `);
+            `;
+
+            ventanaImpresion.document.open();
+            ventanaImpresion.document.write(htmlContenido);
             ventanaImpresion.document.close();
+
+            ventanaImpresion.onload = function() {
+                ventanaImpresion.focus();
+                ventanaImpresion.print();
+            };
         };
     </script>
-    <style>
-        body {
-            background-image: linear-gradient(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.35)), url('https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1920&q=80');
-            background-size: cover;
-            background-position: center;
-            background-attachment: fixed;
-        }
-    </style>
 </head>
-<body class="min-h-screen text-slate-800">
+<body class="bg-amber-50/30 text-slate-800 font-sans min-h-screen">
 
-    <!-- PANTALLA DE LOGIN CON CONTRASEÑA -->
-    <div id="loginSection" class="min-h-screen flex items-center justify-center p-4">
-        <div class="bg-white/95 backdrop-blur-md p-8 rounded-2xl shadow-2xl max-w-md w-full text-center border border-amber-200">
-            <span class="text-xs font-bold tracking-wider uppercase text-amber-900 bg-amber-200/80 px-2.5 py-1 rounded-md">Estudio Contable</span>
-            <h1 class="text-2xl font-extrabold text-slate-900 mt-3">Laura B. Deiana</h1>
-            <p class="text-sm text-slate-600 mt-1 mb-6">Ingresa tus credenciales para acceder al sistema.</p>
-            
-            <form onsubmit="window.loginConClave(event)" class="space-y-4 text-left">
+    <!-- SECCIÓN DE LOGIN -->
+    <section id="loginSection" class="min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border border-amber-200">
+            <div class="text-center mb-6">
+                <h1 class="text-2xl font-bold text-amber-900">Estudio Contable</h1>
+                <p class="text-sm text-slate-500 mt-1">Gestión de Clientes & Honorarios</p>
+            </div>
+            <form onsubmit="loginConClave(event)" class="space-y-4">
                 <div>
-                    <label class="block text-xs font-bold text-amber-900 uppercase mb-1">Correo Autorizado</label>
-                    <input type="email" id="inputEmail" placeholder="correo@ejemplo.com" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Correo Autorizado</label>
+                    <input type="email" id="inputEmail" placeholder="correo@ejemplo.com" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700">
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-amber-900 uppercase mb-1">Contraseña de Acceso</label>
-                    <input type="password" id="inputPassword" placeholder="••••••••" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Contraseña Maestro</label>
+                    <input type="password" id="inputPassword" placeholder="••••••••" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700">
                 </div>
-                <button type="submit" class="w-full bg-amber-800 text-white font-semibold py-3 px-4 rounded-xl hover:bg-amber-900 transition-colors shadow-sm mt-2">
-                    Ingresar al Sistema
+                <button type="submit" class="w-full bg-amber-800 text-white font-bold py-2.5 rounded-lg hover:bg-amber-900 transition-colors shadow-md text-sm mt-2">
+                    Iniciar Sesión
                 </button>
             </form>
         </div>
-    </div>
+    </section>
 
-    <!-- APLICACIÓN PRINCIPAL (PANEL SPA) -->
-    <div id="appSection" class="hidden min-h-screen p-4 sm:p-6 flex items-center justify-center">
-        <div class="max-w-4xl w-full mx-auto bg-white/95 backdrop-blur-md shadow-2xl rounded-2xl p-6 border border-amber-200/60 relative">
-            
-            <!-- HEADER PRINCIPAL -->
-            <header class="mb-6 border-b border-amber-200/60 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <!-- SECCIÓN PRINCIPAL (APLICACIÓN) -->
+    <section id="appSection" class="hidden min-h-screen pb-12">
+        <!-- Navegación -->
+        <header class="bg-amber-900 text-white shadow-md">
+            <div class="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
                 <div>
-                    <span class="text-xs font-bold tracking-wider uppercase text-amber-900 bg-amber-200/80 px-2.5 py-1 rounded-md">Estudio Contable</span>
-                    <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1">Laura B. Deiana</h1>
-                    <p class="text-xs text-slate-600 font-medium mt-0.5">Usuario: <span id="userEmail" class="font-bold text-amber-900"></span></p>
+                    <h1 class="font-bold text-lg leading-tight">Estudio Contable</h1>
+                    <span id="userEmail" class="text-xs text-amber-200 block"></span>
                 </div>
-                
-                <div class="flex items-center gap-2 flex-wrap">
-                    <button onclick="window.toggleModalImprimir()" class="bg-amber-800 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-amber-900 transition-colors shadow-sm flex items-center gap-1.5">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
-                        Imprimir Listado
-                    </button>
-                    <button id="btnToggleForm" onclick="window.toggleFormulario()" class="bg-amber-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-amber-800 transition-colors shadow-sm">
+                <button onclick="cerrarSesion()" class="bg-amber-800 hover:bg-amber-700 text-white text-xs px-3 py-1.5 rounded-lg transition-colors border border-amber-700">
+                    Cerrar Sesión
+                </button>
+            </div>
+        </header>
+
+        <main class="max-w-6xl mx-auto px-4 mt-6">
+            <!-- Barra superior de acciones -->
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-6 bg-white p-4 rounded-xl shadow-xs border border-amber-200">
+                <input type="text" id="buscador" placeholder="Buscar por Nombre, CUIT, Banco, ARCA, Rentas..." class="flex-1 min-w-[200px] px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700">
+                <div class="flex gap-2">
+                    <button id="btnToggleForm" onclick="toggleFormulario()" class="bg-amber-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-amber-800 transition-colors shadow-sm">
                         + Nuevo Cliente
                     </button>
-                    <button onclick="window.cerrarSesion()" class="bg-slate-200 text-slate-700 hover:bg-slate-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors shadow-sm">
-                        Salir
+                    <button onclick="toggleModalImprimir()" class="bg-slate-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-slate-800 transition-colors shadow-sm">
+                        🖨️ Imprimir Lista
                     </button>
                 </div>
-            </header>
+            </div>
 
-            <!-- FORMULARIO DE CLIENTE -->
-            <div id="formContainer" class="hidden mb-6 bg-amber-50/50 p-4 sm:p-5 rounded-xl border border-amber-200/80">
+            <!-- Contenedor del Formulario Cliente (Oculto por defecto) -->
+            <div id="formContainer" class="hidden mb-6 bg-white p-6 rounded-xl shadow-md border border-amber-200">
+                <h2 class="text-lg font-bold text-amber-900 mb-4 border-b pb-2">Datos del Cliente</h2>
                 <form id="clientForm" class="space-y-4">
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-xs font-bold text-amber-900 uppercase mb-1">Nombre y Apellido / Razón Social *</label>
-                            <input type="text" id="nombre" required placeholder="Ej: Perez Juan Manuel" class="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white">
+                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Nombre / Razón Social *</label>
+                            <input type="text" id="nombre" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700">
                         </div>
                         <div>
-                            <label class="block text-xs font-bold text-amber-900 uppercase mb-1">CUIT *</label>
-                            <input type="text" id="cuit" required placeholder="XX-XXXXXXXX-X" class="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white font-mono">
+                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">CUIT *</label>
+                            <input type="text" id="cuit" placeholder="20-12345678-9" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700">
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <span class="block text-xs font-bold text-amber-900 uppercase mb-2">Condición IVA</span>
-                            <div class="flex flex-wrap gap-3">
-                                <label class="inline-flex items-center text-xs text-slate-700 font-medium">
-                                    <input type="radio" name="condicion" value="RI" class="text-amber-700 focus:ring-amber-500">
-                                    <span class="ml-1.5">Responsable Inscripto</span>
+                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Condición Fiscal</label>
+                            <div class="flex gap-4 items-center pt-2 text-sm">
+                                <label class="flex items-center gap-1 cursor-pointer">
+                                    <input type="radio" name="condicion" value="Monotributo" class="text-amber-800 focus:ring-amber-700"> Monotributo
                                 </label>
-                                <label class="inline-flex items-center text-xs text-slate-700 font-medium">
-                                    <input type="radio" name="condicion" value="Monotributo" class="text-amber-700 focus:ring-amber-500">
-                                    <span class="ml-1.5">Monotributo</span>
+                                <label class="flex items-center gap-1 cursor-pointer">
+                                    <input type="radio" name="condicion" value="R.I." class="text-amber-800 focus:ring-amber-700"> Responsable Inscripto
                                 </label>
-                                <label class="inline-flex items-center text-xs text-slate-700 font-medium">
-                                    <input type="radio" name="condicion" value="Exento" class="text-amber-700 focus:ring-amber-500">
-                                    <span class="ml-1.5">Exento</span>
+                                <label class="flex items-center gap-1 cursor-pointer">
+                                    <input type="radio" name="condicion" value="Exento" class="text-amber-800 focus:ring-amber-700"> Exento
                                 </label>
                             </div>
                         </div>
                         <div>
-                            <span class="block text-xs font-bold text-amber-900 uppercase mb-2">Estado</span>
-                            <div class="flex gap-4">
-                                <label class="inline-flex items-center text-xs text-slate-700 font-medium">
-                                    <input type="radio" name="estado" value="Activo" checked class="text-amber-700 focus:ring-amber-500">
-                                    <span class="ml-1.5">Activo</span>
+                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Estado</label>
+                            <div class="flex gap-4 items-center pt-2 text-sm">
+                                <label class="flex items-center gap-1 cursor-pointer">
+                                    <input type="radio" name="estado" value="Activo" checked class="text-amber-800 focus:ring-amber-700"> Activo
                                 </label>
-                                <label class="inline-flex items-center text-xs text-slate-700 font-medium">
-                                    <input type="radio" name="estado" value="Inactivo" class="text-amber-700 focus:ring-amber-500">
-                                    <span class="ml-1.5">Inactivo</span>
+                                <label class="flex items-center gap-1 cursor-pointer">
+                                    <input type="radio" name="estado" value="Inactivo" class="text-amber-800 focus:ring-amber-700"> Inactivo
                                 </label>
                             </div>
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
-                            <label class="block text-xs font-bold text-amber-900 uppercase mb-1">Banco / Clave</label>
-                            <input type="text" id="banco" placeholder="CBU / Clave banco" class="w-full px-3 py-1.5 border border-amber-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white">
+                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">CBU / Banco</label>
+                            <input type="text" id="banco" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700">
                         </div>
                         <div>
-                            <label class="block text-xs font-bold text-amber-900 uppercase mb-1">Clave ARCA</label>
-                            <input type="text" id="arca" placeholder="Clave Fiscal" class="w-full px-3 py-1.5 border border-amber-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white font-mono">
+                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Clave ARCA</label>
+                            <input type="text" id="arca" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700">
                         </div>
                         <div>
-                            <label class="block text-xs font-bold text-amber-900 uppercase mb-1">Clave Rentas</label>
-                            <input type="text" id="rentas" placeholder="Clave DGR" class="w-full px-3 py-1.5 border border-amber-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white font-mono">
+                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Clave Rentas</label>
+                            <input type="text" id="rentas" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700">
                         </div>
+                    </div>
+
+                    <!-- SUBSECCIÓN: CARGAR HONORARIOS INICIALES -->
+                    <div id="seccionHonorariosForm" class="bg-emerald-50/60 p-4 rounded-xl border border-emerald-200 mt-4 space-y-3">
+                        <div class="flex justify-between items-center border-b border-emerald-200/80 pb-2">
+                            <h3 class="text-xs font-bold text-emerald-900 uppercase">Cargar Honorarios Iniciales (Opcional)</h3>
+                            <span class="text-[11px] text-emerald-700 font-medium italic">Puedes dejarlo en blanco si no aplica</span>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Fecha de Pago</label>
+                                <input type="date" id="fechaHonorarioNuevo" class="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600 bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Monto ($)</label>
+                                <input type="number" step="0.01" id="montoHonorarioNuevo" placeholder="0.00" class="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600 bg-white">
+                            </div>
+                        </div>
+
                         <div>
-                            <label class="block text-xs font-bold text-amber-900 uppercase mb-1">Clave ART</label>
-                            <input type="text" id="art" placeholder="Clave Mutua / ART" class="w-full px-3 py-1.5 border border-amber-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white font-mono">
+                            <label for="input-periodo-form" class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Agregar Períodos</label>
+                            <div class="flex gap-2">
+                                <input type="text" id="input-periodo-form" placeholder="Ej: 01/2026, Enero 2026, etc." class="flex-1 px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600 bg-white">
+                                <button type="button" id="btn-agregar-periodo-form" class="bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-emerald-800 transition-colors">Agregar</button>
+                            </div>
+                            <div id="periodos-container-form" class="flex flex-wrap gap-1.5 min-h-[28px] mt-2"></div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                            <fieldset class="border border-emerald-200 rounded-lg p-2.5 bg-white">
+                                <legend class="text-[11px] font-bold text-slate-700 px-1">Medio de Pago</legend>
+                                <div class="flex gap-3 text-xs">
+                                    <label class="flex items-center gap-1 cursor-pointer">
+                                        <input type="radio" name="medio_pago_form" value="Transferencia" checked class="text-emerald-800 focus:ring-emerald-700"> Transferencia
+                                    </label>
+                                    <label class="flex items-center gap-1 cursor-pointer">
+                                        <input type="radio" name="medio_pago_form" value="Efectivo" class="text-emerald-800 focus:ring-emerald-700"> Efectivo
+                                    </label>
+                                </div>
+                            </fieldset>
+
+                            <fieldset class="border border-emerald-200 rounded-lg p-2.5 bg-white">
+                                <legend class="text-[11px] font-bold text-slate-700 px-1">Tipo de Comprobante</legend>
+                                <div class="flex gap-3 text-xs">
+                                    <label class="flex items-center gap-1 cursor-pointer">
+                                        <input type="radio" name="tipo_comprobante_form" value="Factura" checked class="text-emerald-800 focus:ring-emerald-700"> Factura
+                                    </label>
+                                    <label class="flex items-center gap-1 cursor-pointer">
+                                        <input type="radio" name="tipo_comprobante_form" value="Recibo" class="text-emerald-800 focus:ring-emerald-700"> Recibo
+                                    </label>
+                                </div>
+                            </fieldset>
                         </div>
                     </div>
 
                     <div class="flex justify-end gap-2 pt-2">
-                        <button type="button" id="btnCancelar" onclick="window.limpiarFormulario()" class="hidden bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-slate-300 transition-colors">
+                        <button type="button" id="btnCancelar" onclick="limpiarFormulario()" class="hidden bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-slate-300 transition-colors">
                             Cancelar
                         </button>
-                        <button type="submit" id="btnGuardar" class="bg-amber-800 text-white px-5 py-2 rounded-lg text-xs font-semibold hover:bg-amber-900 transition-colors shadow-sm">
+                        <button type="submit" id="btnGuardar" class="bg-amber-800 text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-amber-900 transition-colors shadow-sm">
                             Guardar Cliente
                         </button>
                     </div>
                 </form>
             </div>
 
-            <!-- BUSCADOR -->
-            <div class="mb-4">
-                <input type="text" id="buscador" placeholder="🔍 Buscar por nombre, CUIT, condición o claves..." class="w-full px-4 py-2.5 border border-amber-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white/90 shadow-2xs">
+            <!-- Listado de Clientes -->
+            <div id="contenedorClientes" class="space-y-3">
+                <div class="py-8 text-center text-slate-400">Cargando datos...</div>
             </div>
+        </main>
+    </section>
 
-            <!-- CONTENEDOR DE CLIENTES -->
-            <div id="contenedorClientes" class="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-                <!-- Se poblará dinámicamente -->
-            </div>
-
-        </div>
-    </div>
-
-    <!-- MODAL FILTROS DE IMPRESIÓN -->
-    <div id="modalImprimir" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-amber-200">
-            <h3 class="text-lg font-bold text-amber-900 mb-4">Opciones de Reporte</h3>
+    <!-- MODAL IMPRIMIR LISTADO CON VALORES DE FILTRO CORREGIDOS -->
+    <div id="modalImprimir" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-amber-200">
+            <h3 class="text-lg font-bold text-amber-900 mb-4">Imprimir / Exportar Reporte</h3>
             
-            <div class="space-y-4">
+            <div class="space-y-4 text-sm">
                 <div>
-                    <label class="block text-xs font-bold text-amber-900 uppercase mb-2">Filtrar por Condición IVA</label>
-                    <div class="space-y-1.5 text-xs">
-                        <label class="flex items-center gap-2"><input type="radio" name="filtroImpresionCondicion" value="Todos" checked class="text-amber-700"> Todos</label>
-                        <label class="flex items-center gap-2"><input type="radio" name="filtroImpresionCondicion" value="RI" class="text-amber-700"> Responsable Inscripto</label>
-                        <label class="flex items-center gap-2"><input type="radio" name="filtroImpresionCondicion" value="Monotributo" class="text-amber-700"> Monotributo</label>
-                        <label class="flex items-center gap-2"><input type="radio" name="filtroImpresionCondicion" value="Exento" class="text-amber-700"> Exento</label>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-2">Filtrar por Condición</label>
+                    <div class="flex flex-wrap gap-3">
+                        <label class="cursor-pointer flex items-center gap-1">
+                            <input type="radio" name="filtroImpresionCondicion" value="Todos" checked class="text-amber-800 focus:ring-amber-700"> Todos
+                        </label>
+                        <label class="cursor-pointer flex items-center gap-1">
+                            <input type="radio" name="filtroImpresionCondicion" value="Monotributo" class="text-amber-800 focus:ring-amber-700"> Monotributo
+                        </label>
+                        <label class="cursor-pointer flex items-center gap-1">
+                            <input type="radio" name="filtroImpresionCondicion" value="R.I." class="text-amber-800 focus:ring-amber-700"> Resp. Inscripto
+                        </label>
+                        <label class="cursor-pointer flex items-center gap-1">
+                            <input type="radio" name="filtroImpresionCondicion" value="Exento" class="text-amber-800 focus:ring-amber-700"> Exento
+                        </label>
                     </div>
                 </div>
 
                 <div>
-                    <label class="block text-xs font-bold text-amber-900 uppercase mb-2">Filtrar por Estado</label>
-                    <div class="space-y-1.5 text-xs">
-                        <label class="flex items-center gap-2"><input type="radio" name="filtroImpresionEstado" value="Todos" checked class="text-amber-700"> Todos</label>
-                        <label class="flex items-center gap-2"><input type="radio" name="filtroImpresionEstado" value="Activo" class="text-amber-700"> Activo</label>
-                        <label class="flex items-center gap-2"><input type="radio" name="filtroImpresionEstado" value="Inactivo" class="text-amber-700"> Inactivo</label>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-2">Filtrar por Estado</label>
+                    <div class="flex flex-wrap gap-3">
+                        <label class="cursor-pointer flex items-center gap-1">
+                            <input type="radio" name="filtroImpresionEstado" value="Todos" checked class="text-amber-800 focus:ring-amber-700"> Todos
+                        </label>
+                        <label class="cursor-pointer flex items-center gap-1">
+                            <input type="radio" name="filtroImpresionEstado" value="Activo" class="text-amber-800 focus:ring-amber-700"> Activo
+                        </label>
+                        <label class="cursor-pointer flex items-center gap-1">
+                            <input type="radio" name="filtroImpresionEstado" value="Inactivo" class="text-amber-800 focus:ring-amber-700"> Inactivo
+                        </label>
                     </div>
                 </div>
             </div>
 
             <div class="flex justify-end gap-2 mt-6">
-                <button onclick="window.toggleModalImprimir()" class="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
-                <button onclick="window.ejecutarImpresion()" class="px-4 py-1.5 text-xs font-semibold bg-amber-800 text-white rounded-lg hover:bg-amber-900 shadow-sm">Generar Vista de Impresión</button>
+                <button onclick="toggleModalImprimir()" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-slate-300">
+                    Cancelar
+                </button>
+                <button onclick="ejecutarImpresion()" class="bg-amber-800 text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-amber-900 shadow-xs">
+                    Generar Reporte
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL REGISTRO Y HISTORIAL DE HONORARIOS -->
+    <div id="modalHonorarios" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-amber-200 max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center border-b pb-3 mb-4">
+                <div>
+                    <h3 class="text-lg font-bold text-amber-900">Gestión de Honorarios</h3>
+                    <p id="nombreClienteHonorarios" class="text-xs font-semibold text-slate-600"></p>
+                </div>
+                <button onclick="cerrarModalHonorarios()" class="text-slate-400 hover:text-slate-600 font-bold text-lg">✕</button>
+            </div>
+
+            <!-- Formulario de Carga Dinámica Modal -->
+            <form id="formHonorarios" class="space-y-3 bg-amber-50/50 p-4 rounded-xl border border-amber-100 mb-4">
+                <h4 class="text-xs font-bold text-amber-900 uppercase">Registrar Nuevo Pago</h4>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Fecha de Pago</label>
+                        <input type="date" id="honorariosFecha" required class="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-700">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Monto ($)</label>
+                        <input type="number" step="0.01" id="honorariosMonto" placeholder="0.00" required class="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-700">
+                    </div>
+                </div>
+
+                <div>
+                    <label for="input-periodo" class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Agregar Períodos</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="input-periodo" placeholder="Ej: 01/2026, Enero 2026, etc." class="flex-1 px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-700">
+                        <button type="button" id="btn-agregar-periodo" class="bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-emerald-800 transition-colors">Agregar</button>
+                    </div>
+                    <div id="periodos-container" class="flex flex-wrap gap-1.5 min-h-[28px] mt-2"></div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <fieldset class="border border-slate-200 rounded-lg p-2.5 bg-white">
+                        <legend class="text-[11px] font-bold text-slate-700 px-1">Medio de Pago</legend>
+                        <div class="flex gap-3 text-xs">
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="radio" id="pago_transferencia" name="medio_pago" value="Transferencia" checked class="text-amber-800 focus:ring-amber-700"> Transferencia
+                            </label>
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="radio" id="pago_efectivo" name="medio_pago" value="Efectivo" class="text-amber-800 focus:ring-amber-700"> Efectivo
+                            </label>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="border border-slate-200 rounded-lg p-2.5 bg-white">
+                        <legend class="text-[11px] font-bold text-slate-700 px-1">Tipo de Comprobante</legend>
+                        <div class="flex gap-3 text-xs">
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="radio" id="comp_factura" name="tipo_comprobante" value="Factura" checked class="text-amber-800 focus:ring-amber-700"> Factura
+                            </label>
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="radio" id="comp_recibo" name="tipo_comprobante" value="Recibo" class="text-amber-800 focus:ring-amber-700"> Recibo
+                            </label>
+                        </div>
+                    </fieldset>
+                </div>
+
+                <div class="flex justify-end pt-1">
+                    <button type="submit" class="bg-amber-800 text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-amber-900 transition-colors shadow-xs">
+                        Guardar Pago Honorario
+                    </button>
+                </div>
+            </form>
+
+            <!-- Historial -->
+            <div class="flex-1 overflow-y-auto pr-1">
+                <h4 class="text-xs font-bold text-slate-700 uppercase mb-2">Historial de Pagos</h4>
+                <div id="listaHistorialHonorarios" class="space-y-2">
+                    <!-- Dinámico -->
+                </div>
+            </div>
+
+            <div class="flex justify-end mt-4 pt-3 border-t">
+                <button onclick="cerrarModalHonorarios()" class="bg-slate-200 text-slate-700 px-4 py-1.5 rounded-lg text-xs font-semibold hover:bg-slate-300">
+                    Cerrar
+                </button>
             </div>
         </div>
     </div>
