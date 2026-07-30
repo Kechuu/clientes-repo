@@ -3,14 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Clientes</title>
+    <title>Gestión de Clientes - Estudio Contable</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Firebase SDK y Lógica de la Aplicación -->
+    
+    <!-- Firebase SDK v12 -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
-        import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-analytics.js";
-        import { getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+        import { 
+            getFirestore, 
+            collection, 
+            onSnapshot, 
+            addDoc, 
+            updateDoc, 
+            deleteDoc, 
+            doc 
+        } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+        import { 
+            getAuth, 
+            GoogleAuthProvider, 
+            signInWithPopup, 
+            signOut, 
+            onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
 
         // ==========================================
         // CONFIGURACIÓN DE FIREBASE
@@ -21,18 +36,32 @@
             projectId: "clientes-25157",
             storageBucket: "clientes-25157.firebasestorage.app",
             messagingSenderId: "964761913555",
-            appId: "1:964761913555:web:f4591e75b00bd68f956c26",
-            measurementId: "G-7NRM97PDY8"
+            appId: "1:964761913555:web:f4591e75b00bd68f956c26"
         };
 
         const app = initializeApp(firebaseConfig);
-        const analytics = getAnalytics(app);
         const db = getFirestore(app);
+        const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
+
+        // ==========================================
+        // LISTA BLANCA DE CORREOS PERMITIDOS
+        // (Asegúrate de poner aquí tus correos exactos)
+        // ==========================================
+        const CORREOS_AUTORIZADOS = [
+            "tu-correo@gmail.com",
+            "lauradeiana@gmail.com"
+        ];
 
         let clientes = [];
         let idEditando = null;
+        let unsubscribeRealtime = null;
 
-        // Referencias del DOM
+        // Referencias DOM
+        const loginSection = document.getElementById('loginSection');
+        const appSection = document.getElementById('appSection');
+        const userEmailSpan = document.getElementById('userEmail');
+        
         const clientForm = document.getElementById('clientForm');
         const formContainer = document.getElementById('formContainer');
         const btnToggleForm = document.getElementById('btnToggleForm');
@@ -48,28 +77,115 @@
         const btnGuardar = document.getElementById('btnGuardar');
         const modalImprimir = document.getElementById('modalImprimir');
 
-        // Mostrar / Ocultar Formulario
+        // ==========================================
+        // MANEJO DE SESIÓN Y AUTENTICACIÓN
+        // ==========================================
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // Validación por lista blanca de correos
+                if (CORREOS_AUTORIZADOS.length > 0 && !CORREOS_AUTORIZADOS.includes(user.email)) {
+                    mostrarToast("Acceso denegado: El correo no está autorizado.", "error");
+                    signOut(auth);
+                    return;
+                }
+
+                loginSection.classList.add('hidden');
+                appSection.classList.remove('hidden');
+                if (userEmailSpan) userEmailSpan.textContent = user.email;
+
+                // Suscribir Firestore en tiempo real
+                suscribirClientes();
+            } else {
+                loginSection.classList.remove('hidden');
+                appSection.classList.add('hidden');
+                
+                // Cancelar subscripción de la base de datos si cierra sesión
+                if (unsubscribeRealtime) {
+                    unsubscribeRealtime();
+                    unsubscribeRealtime = null;
+                }
+            }
+        });
+
+        window.loginConGoogle = async function() {
+            try {
+                await signInWithPopup(auth, provider);
+            } catch (error) {
+                console.error("Error al iniciar sesión: ", error);
+                mostrarToast("No se pudo iniciar sesión con Google.", "error");
+            }
+        };
+
+        window.cerrarSesion = async function() {
+            try {
+                await signOut(auth);
+            } catch (error) {
+                console.error("Error al cerrar sesión: ", error);
+            }
+        };
+
+        // ==========================================
+        // NOTIFICACIÓN TOAST
+        // ==========================================
+        function mostrarToast(mensaje, tipo = 'exito') {
+            const toast = document.createElement('div');
+            const bgClass = tipo === 'exito' ? 'bg-emerald-800' : 'bg-rose-800';
+            toast.className = `fixed bottom-5 right-5 ${bgClass} text-white px-4 py-3 rounded-xl shadow-lg z-50 text-sm font-medium transition-all duration-300 transform translate-y-2 opacity-0`;
+            toast.textContent = mensaje;
+            document.body.appendChild(toast);
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            }, 10);
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Auto-formateador visual de CUIT (XX-XXXXXXXX-X)
+        cuitInput.addEventListener('input', (e) => {
+            let value = e.target.value.replace(/\D/g, '');
+            if (value.length > 11) value = value.slice(0, 11);
+            if (value.length > 10) {
+                value = value.replace(/^(\d{2})(\d{8})(\d{1})$/, '$1-$2-$3');
+            } else if (value.length > 2) {
+                value = value.replace(/^(\d{2})(\d{0,8})/, '$1-$2');
+            }
+            e.target.value = value;
+        });
+
+        // Subscripción en tiempo real con Firestore
+        function suscribirClientes() {
+            unsubscribeRealtime = onSnapshot(collection(db, "clientes"), (snapshot) => {
+                clientes = snapshot.docs.map(docSnap => ({
+                    id: docSnap.id,
+                    ...docSnap.data()
+                }));
+                mostrarClientes(buscadorInput.value);
+            }, (error) => {
+                console.error("Error en tiempo real: ", error);
+                contenedorClientes.innerHTML = `<div class="py-6 text-center text-rose-600 font-medium">Error de permisos o conexión con la base de datos.</div>`;
+            });
+        }
+
+        // Opciones UI de formulario y modal
         window.toggleFormulario = function() {
             if (formContainer.classList.contains('hidden')) {
                 formContainer.classList.remove('hidden');
                 btnToggleForm.textContent = "✕ Cerrar Formulario";
-                btnToggleForm.className = "bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors shadow-sm";
+                btnToggleForm.className = "bg-slate-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-slate-800 transition-colors shadow-sm";
                 nombreInput.focus();
             } else {
                 limpiarFormulario();
             }
-        }
+        };
 
-        // Mostrar / Ocultar Modal de Impresión
         window.toggleModalImprimir = function() {
-            if (modalImprimir.classList.contains('hidden')) {
-                modalImprimir.classList.remove('hidden');
-            } else {
-                modalImprimir.classList.add('hidden');
-            }
-        }
+            modalImprimir.classList.toggle('hidden');
+        };
 
-        // Formatear Fecha y Hora para mostrar de manera limpia
         function obtenerFechaHoraActual() {
             const ahora = new Date();
             const dia = String(ahora.getDate()).padStart(2, '0');
@@ -80,36 +196,19 @@
             return `${dia}/${mes}/${anio} ${horas}:${minutos}`;
         }
 
-        // Cargar clientes desde Firestore
-        async function cargarClientes() {
-            try {
-                const querySnapshot = await getDocs(collection(db, "clientes"));
-                clientes = [];
-                querySnapshot.forEach((docSnap) => {
-                    clientes.push({ id: docSnap.id, ...docSnap.data() });
-                });
-                mostrarClientes(buscadorInput.value);
-            } catch (error) {
-                console.error("Error al cargar los datos: ", error);
-                contenedorClientes.innerHTML = `<div class="py-6 text-center text-red-500">Error al conectar con la base de datos.</div>`;
-            }
-        }
-
         // Validar CUIT (Módulo 11)
         function validarCUIT(cuit) {
             let cleanerCuit = cuit.replace(/[^0-9]/g, '');
             if (cleanerCuit.length !== 11) return false;
 
             let tipo = cleanerCuit.substring(0, 2);
-            if (tipo !== '20' && tipo !== '23' && tipo !== '24' && tipo !== '27' && tipo !== '30' && tipo !== '33' && tipo !== '34') {
-                return false;
-            }
+            if (!['20', '23', '24', '27', '30', '33', '34'].includes(tipo)) return false;
 
             let acumulado = 0;
             let digitos = cleanerCuit.split('');
             let digitoVerificador = parseInt(digitos.pop());
-
             let bazos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+
             for (let i = 0; i < 10; i++) {
                 acumulado += parseInt(digitos[i]) * bazos[i];
             }
@@ -121,15 +220,15 @@
             return resultado === digitoVerificador;
         }
 
-        // Renderizar lista
+        // Renderizar lista de clientes
         window.mostrarClientes = function(filtro = '') {
-            clientes.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+            clientes.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es', { sensitivity: 'base' }));
             contenedorClientes.innerHTML = '';
             
             const textoFiltro = filtro.toLowerCase();
             const clientesFiltrados = clientes.filter(c => 
-                c.nombre.toLowerCase().includes(textoFiltro) || 
-                c.cuit.toLowerCase().includes(textoFiltro) ||
+                (c.nombre && c.nombre.toLowerCase().includes(textoFiltro)) || 
+                (c.cuit && c.cuit.toLowerCase().includes(textoFiltro)) ||
                 (c.banco && c.banco.toLowerCase().includes(textoFiltro)) ||
                 (c.arca && c.arca.toLowerCase().includes(textoFiltro)) ||
                 (c.rentas && c.rentas.toLowerCase().includes(textoFiltro)) ||
@@ -210,7 +309,7 @@
                 `;
                 contenedorClientes.appendChild(card);
             });
-        }
+        };
 
         window.toggleDetalles = function(id) {
             const panel = document.getElementById(`detalles-${id}`);
@@ -226,8 +325,15 @@
             }
         };
 
+        // Copiar dato al portapapeles (Elimina guiones automáticamente si es CUIT)
         window.copiarDato = function(texto, boton) {
-            navigator.clipboard.writeText(texto).then(() => {
+            let textoACopiar = texto;
+            
+            if (validarCUIT(texto)) {
+                textoACopiar = texto.replace(/-/g, '');
+            }
+
+            navigator.clipboard.writeText(textoACopiar).then(() => {
                 const original = boton.textContent;
                 boton.textContent = "¡Copiado!";
                 boton.className = 'bg-emerald-700 text-white py-1.5 px-2.5 rounded-md text-xs font-medium shadow-xs';
@@ -240,12 +346,13 @@
             });
         };
 
+        // Enviar formulario (Agregar / Modificar)
         clientForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             const cuitLimpio = cuitInput.value.trim();
 
             if (!validarCUIT(cuitLimpio)) {
-                alert("⚠️ El CUIT ingresado no es válido. Verifique los dígitos o el formato.");
+                mostrarToast("El CUIT ingresado no es válido.", "error");
                 cuitInput.focus();
                 return;
             }
@@ -253,8 +360,6 @@
             const condicionSeleccionada = document.querySelector('input[name="condicion"]:checked');
             const estadoSeleccionado = document.querySelector('input[name="estado"]:checked');
             
-            const fechaHora = obtenerFechaHoraActual();
-
             const datosCliente = {
                 nombre: nombreInput.value.trim(),
                 cuit: cuitLimpio,
@@ -264,27 +369,29 @@
                 arca: arcaInput.value.trim(),
                 rentas: rentasInput.value.trim(),
                 art: artInput.value.trim(),
-                ultimaActualizacion: fechaHora // Se guarda la fecha y hora de la operación actual
+                ultimaActualizacion: obtenerFechaHoraActual()
             };
 
             try {
                 if (idEditando === null) {
                     await addDoc(collection(db, "clientes"), datosCliente);
+                    mostrarToast("Cliente registrado exitosamente.");
                 } else {
                     const docRef = doc(db, "clientes", idEditando);
                     await updateDoc(docRef, datosCliente);
+                    mostrarToast("Cliente actualizado exitosamente.");
                 }
                 window.limpiarFormulario();
-                await cargarClientes();
             } catch (error) {
                 console.error("Error al guardar: ", error);
-                alert("Hubo un error al guardar en la base de datos.");
+                mostrarToast("Hubo un error al guardar en la base de datos.", "error");
             }
         });
 
         window.editarCliente = function(id) {
             const cliente = clientes.find(c => c.id === id);
             if (!cliente) return;
+
             nombreInput.value = cliente.nombre;
             cuitInput.value = cliente.cuit;
             
@@ -313,7 +420,7 @@
             
             formContainer.classList.remove('hidden');
             btnToggleForm.textContent = "✕ Cerrar Formulario";
-            btnToggleForm.className = "bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors shadow-sm";
+            btnToggleForm.className = "bg-slate-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-slate-800 transition-colors shadow-sm";
             
             nombreInput.focus();
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -323,10 +430,10 @@
             if (confirm("¿Estás seguro de que deseas eliminar este cliente?")) {
                 try {
                     await deleteDoc(doc(db, "clientes", id));
-                    await cargarClientes();
+                    mostrarToast("Cliente eliminado correctamente.");
                 } catch (error) {
                     console.error("Error al eliminar: ", error);
-                    alert("No se pudo eliminar el registro.");
+                    mostrarToast("No se pudo eliminar el registro.", "error");
                 }
             }
         };
@@ -346,10 +453,10 @@
             btnCancelar.classList.add('hidden');
             formContainer.classList.add('hidden');
             btnToggleForm.textContent = "+ Nuevo Cliente";
-            btnToggleForm.className = "bg-amber-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-800 transition-colors shadow-sm";
+            btnToggleForm.className = "bg-amber-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-amber-800 transition-colors shadow-sm";
         };
 
-        // Función para generar e imprimir el reporte con el número de orden
+        // Generación de Reporte para Impresión
         window.ejecutarImpresion = function() {
             const condicionSeleccionada = document.querySelector('input[name="filtroImpresionCondicion"]:checked').value;
             const estadoSeleccionado = document.querySelector('input[name="filtroImpresionEstado"]:checked').value;
@@ -361,11 +468,11 @@
             });
 
             if (filtrados.length === 0) {
-                alert(`No se encontraron clientes con los filtros seleccionados.`);
+                mostrarToast("No se encontraron clientes con los filtros seleccionados.", "error");
                 return;
             }
 
-            filtrados.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+            filtrados.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es', { sensitivity: 'base' }));
 
             window.toggleModalImprimir();
 
@@ -434,11 +541,6 @@
         buscadorInput.addEventListener('input', function() {
             mostrarClientes(buscadorInput.value);
         });
-
-        window.addEventListener('DOMContentLoaded', () => {
-            cargarClientes();
-            buscadorInput.focus();
-        });
     </script>
     <style>
         body {
@@ -449,165 +551,187 @@
         }
     </style>
 </head>
-<body class="min-h-screen p-4 sm:p-6 text-slate-800 flex items-center justify-center">
-    <div class="max-w-4xl w-full mx-auto bg-white/95 backdrop-blur-md shadow-2xl rounded-2xl p-6 border border-amber-200/60 relative">
-        
-        <!-- Membrete y Título -->
-        <header class="mb-6 border-b border-amber-200/60 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div>
-                <span class="text-xs font-bold tracking-wider uppercase text-amber-900 bg-amber-200/80 px-2.5 py-1 rounded-md">Estudio Contable</span>
-                <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1">Laura B. Deiana</h1>
-                <p class="text-xs text-slate-600 font-medium mt-0.5">Gestión de Clientes y Credenciales</p>
-            </div>
+<body class="min-h-screen text-slate-800">
+
+    <!-- ========================================== -->
+    <!-- PANTALLA DE LOGIN -->
+    <!-- ========================================== -->
+    <div id="loginSection" class="min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white/95 backdrop-blur-md p-8 rounded-2xl shadow-2xl max-w-md w-full text-center border border-amber-200">
+            <span class="text-xs font-bold tracking-wider uppercase text-amber-900 bg-amber-200/80 px-2.5 py-1 rounded-md">Estudio Contable</span>
+            <h1 class="text-2xl font-extrabold text-slate-900 mt-3">Laura B. Deiana</h1>
+            <p class="text-sm text-slate-600 mt-1 mb-6">Inicia sesión para acceder a la gestión de clientes y credenciales.</p>
             
-            <!-- Botones Superiores -->
-            <div class="flex items-center gap-2">
-                <!-- Botón de Abrir Selector de Impresión -->
-                <button onclick="window.toggleModalImprimir()" class="bg-amber-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-900 transition-colors shadow-sm flex items-center gap-1.5">
-                    🖨️ Imprimir Listado
-                </button>
+            <button onclick="window.loginConGoogle()" class="w-full bg-white text-slate-700 font-semibold py-3 px-4 rounded-xl border border-slate-300 hover:bg-slate-50 transition-colors flex items-center justify-center gap-3 shadow-sm">
+                <svg class="w-5 h-5" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                </svg>
+                <span>Iniciar sesión con Google</span>
+            </button>
+        </div>
+    </div>
 
-                <!-- Botón Desplegable para Agregar Nuevo Cliente -->
-                <button id="btnToggleForm" onclick="window.toggleFormulario()" class="bg-amber-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-800 transition-colors shadow-sm">
-                    + Nuevo Cliente
-                </button>
-            </div>
-        </header>
-
-        <!-- Modal / Menú Flotante para Elegir qué Imprimir -->
-        <div id="modalImprimir" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div class="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-amber-200 animate-fadeIn">
-                <div class="flex justify-between items-center mb-4 border-b pb-3">
-                    <h3 class="font-bold text-amber-950 text-base">Opciones de Impresión</h3>
-                    <button onclick="window.toggleModalImprimir()" class="text-slate-400 hover:text-slate-700 font-bold text-lg">✕</button>
+    <!-- ========================================== -->
+    <!-- APLICACIÓN PRINCIPAL (PANEL SPA) -->
+    <!-- ========================================== -->
+    <div id="appSection" class="hidden min-h-screen p-4 sm:p-6 flex items-center justify-center">
+        <div class="max-w-4xl w-full mx-auto bg-white/95 backdrop-blur-md shadow-2xl rounded-2xl p-6 border border-amber-200/60 relative">
+            
+            <!-- Membrete y Usuario -->
+            <header class="mb-6 border-b border-amber-200/60 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                    <span class="text-xs font-bold tracking-wider uppercase text-amber-900 bg-amber-200/80 px-2.5 py-1 rounded-md">Estudio Contable</span>
+                    <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1">Laura B. Deiana</h1>
+                    <p class="text-xs text-slate-600 font-medium mt-0.5">Usuario: <span id="userEmail" class="font-bold text-amber-900"></span></p>
                 </div>
                 
-                <div class="space-y-4 mb-6">
-                    <!-- Condición Fiscal -->
-                    <div>
-                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Condición Fiscal</label>
-                        <div class="space-y-2 bg-amber-50/50 p-3 rounded-xl border border-amber-100">
-                            <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
-                                <input type="radio" name="filtroImpresionCondicion" value="Monotributista" checked class="text-amber-600 focus:ring-amber-500">
-                                <span>Monotributistas</span>
-                            </label>
-                            <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
-                                <input type="radio" name="filtroImpresionCondicion" value="Responsable Inscripto" class="text-amber-600 focus:ring-amber-500">
-                                <span>Responsables Inscriptos</span>
-                            </label>
-                            <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
-                                <input type="radio" name="filtroImpresionCondicion" value="Todos" class="text-amber-600 focus:ring-amber-500">
-                                <span>Ambas Condiciones (Todas)</span>
-                            </label>
-                        </div>
-                    </div>
+                <!-- Acciones Principales -->
+                <div class="flex items-center gap-2">
+                    <button onclick="window.toggleModalImprimir()" class="bg-amber-800 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-amber-900 transition-colors shadow-sm flex items-center gap-1.5">
+                        🖨️ Imprimir
+                    </button>
 
-                    <!-- Estado -->
-                    <div>
-                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Estado del Cliente</label>
-                        <div class="space-y-2 bg-amber-50/50 p-3 rounded-xl border border-amber-100">
-                            <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
-                                <input type="radio" name="filtroImpresionEstado" value="Activo" checked class="text-amber-600 focus:ring-amber-500">
-                                <span class="text-emerald-800 font-semibold">Solo Activos</span>
-                            </label>
-                            <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
-                                <input type="radio" name="filtroImpresionEstado" value="Inactivo" class="text-amber-600 focus:ring-amber-500">
-                                <span class="text-rose-800 font-semibold">Solo Inactivos</span>
-                            </label>
-                            <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
-                                <input type="radio" name="filtroImpresionEstado" value="Todos" class="text-amber-600 focus:ring-amber-500">
-                                <span>Todos (Activos e Inactivos)</span>
-                            </label>
-                        </div>
-                    </div>
+                    <button id="btnToggleForm" onclick="window.toggleFormulario()" class="bg-amber-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-amber-800 transition-colors shadow-sm">
+                        + Nuevo
+                    </button>
+
+                    <button onclick="window.cerrarSesion()" class="bg-rose-100 text-rose-800 px-3 py-2 rounded-lg text-xs font-bold hover:bg-rose-200 transition-colors">
+                        Salir
+                    </button>
                 </div>
+            </header>
 
-                <div class="flex justify-end space-x-2">
-                    <button onclick="window.toggleModalImprimir()" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-300 text-xs font-medium">Cancelar</button>
-                    <button onclick="window.ejecutarImpresion()" class="bg-amber-800 text-white px-5 py-2 rounded-lg hover:bg-amber-900 text-xs font-semibold shadow-xs">Generar e Imprimir</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Formulario Oculto por Defecto -->
-        <div id="formContainer" class="hidden mb-6 transition-all">
-            <form id="clientForm" class="bg-amber-50/90 p-5 rounded-xl border border-amber-200 shadow-inner">
-                <h2 class="text-sm font-bold text-amber-950 uppercase tracking-wide mb-3">Datos del Cliente</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-700 mb-1">Apellido y Nombre *</label>
-                        <input type="text" id="nombre" required class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-700 mb-1">CUIT * <span class="text-slate-400 font-normal">(Validación automática)</span></label>
-                        <input type="text" id="cuit" required placeholder="Ej: 20123456789 o con guiones" class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm">
+            <!-- Modal para Filtros de Impresión -->
+            <div id="modalImprimir" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div class="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-amber-200">
+                    <div class="flex justify-between items-center mb-4 border-b pb-3">
+                        <h3 class="font-bold text-amber-950 text-base">Opciones de Impresión</h3>
+                        <button onclick="window.toggleModalImprimir()" class="text-slate-400 hover:text-slate-700 font-bold text-lg">✕</button>
                     </div>
                     
-                    <!-- Radiobox para Condición Fiscal -->
-                    <div class="md:col-span-1 bg-white/70 p-3 rounded-lg border border-amber-200">
-                        <label class="block text-xs font-semibold text-slate-700 mb-2">Condición Fiscal</label>
-                        <div class="flex flex-wrap gap-4">
-                            <label class="flex items-center space-x-2 cursor-pointer text-sm font-medium text-slate-700">
-                                <input type="radio" name="condicion" value="Monotributista" class="w-4 h-4 text-amber-600 focus:ring-amber-500 border-amber-300">
-                                <span>Monotributista</span>
-                            </label>
-                            <label class="flex items-center space-x-2 cursor-pointer text-sm font-medium text-slate-700">
-                                <input type="radio" name="condicion" value="Responsable Inscripto" class="w-4 h-4 text-amber-600 focus:ring-amber-500 border-amber-300">
-                                <span>Responsable Inscripto</span>
-                            </label>
+                    <div class="space-y-4 mb-6">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Condición Fiscal</label>
+                            <div class="space-y-2 bg-amber-50/50 p-3 rounded-xl border border-amber-100">
+                                <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+                                    <input type="radio" name="filtroImpresionCondicion" value="Monotributista" checked class="text-amber-600 focus:ring-amber-500">
+                                    <span>Monotributistas</span>
+                                </label>
+                                <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+                                    <input type="radio" name="filtroImpresionCondicion" value="Responsable Inscripto" class="text-amber-600 focus:ring-amber-500">
+                                    <span>Responsables Inscriptos</span>
+                                </label>
+                                <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+                                    <input type="radio" name="filtroImpresionCondicion" value="Todos" class="text-amber-600 focus:ring-amber-500">
+                                    <span>Ambas Condiciones (Todas)</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Estado del Cliente</label>
+                            <div class="space-y-2 bg-amber-50/50 p-3 rounded-xl border border-amber-100">
+                                <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+                                    <input type="radio" name="filtroImpresionEstado" value="Activo" checked class="text-amber-600 focus:ring-amber-500">
+                                    <span class="text-emerald-800 font-semibold">Solo Activos</span>
+                                </label>
+                                <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+                                    <input type="radio" name="filtroImpresionEstado" value="Inactivo" class="text-amber-600 focus:ring-amber-500">
+                                    <span class="text-rose-800 font-semibold">Solo Inactivos</span>
+                                </label>
+                                <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+                                    <input type="radio" name="filtroImpresionEstado" value="Todos" class="text-amber-600 focus:ring-amber-500">
+                                    <span>Todos (Activos e Inactivos)</span>
+                                </label>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Radiobox para Estado del Cliente (Activo / Inactivo) -->
-                    <div class="md:col-span-1 bg-white/70 p-3 rounded-lg border border-amber-200">
-                        <label class="block text-xs font-semibold text-slate-700 mb-2">Estado</label>
-                        <div class="flex flex-wrap gap-4">
-                            <label class="flex items-center space-x-2 cursor-pointer text-sm font-medium text-slate-700">
-                                <input type="radio" name="estado" value="Activo" checked class="w-4 h-4 text-emerald-600 focus:ring-emerald-500 border-amber-300">
-                                <span class="text-emerald-800 font-semibold">Activo</span>
-                            </label>
-                            <label class="flex items-center space-x-2 cursor-pointer text-sm font-medium text-slate-700">
-                                <input type="radio" name="estado" value="Inactivo" class="w-4 h-4 text-rose-600 focus:ring-rose-500 border-amber-300">
-                                <span class="text-rose-800 font-semibold">Inactivo</span>
-                            </label>
+                    <div class="flex justify-end space-x-2">
+                        <button onclick="window.toggleModalImprimir()" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-300 text-xs font-medium">Cancelar</button>
+                        <button onclick="window.ejecutarImpresion()" class="bg-amber-800 text-white px-5 py-2 rounded-lg hover:bg-amber-900 text-xs font-semibold shadow-xs">Generar e Imprimir</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Formulario para Agregar / Editar -->
+            <div id="formContainer" class="hidden mb-6 transition-all">
+                <form id="clientForm" class="bg-amber-50/90 p-5 rounded-xl border border-amber-200 shadow-inner">
+                    <h2 class="text-sm font-bold text-amber-950 uppercase tracking-wide mb-3">Datos del Cliente</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Apellido y Nombre *</label>
+                            <input type="text" id="nombre" required class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">CUIT * <span class="text-slate-400 font-normal">(Validación automática)</span></label>
+                            <input type="text" id="cuit" required placeholder="Ej: 20-12345678-9" class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm font-mono">
+                        </div>
+                        
+                        <div class="md:col-span-1 bg-white/70 p-3 rounded-lg border border-amber-200">
+                            <label class="block text-xs font-semibold text-slate-700 mb-2">Condición Fiscal</label>
+                            <div class="flex items-center space-x-4">
+                                <label class="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
+                                    <input type="radio" name="condicion" value="Monotributista" class="text-amber-600 focus:ring-amber-500">
+                                    <span>Monotributista</span>
+                                </label>
+                                <label class="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
+                                    <input type="radio" name="condicion" value="Responsable Inscripto" class="text-amber-600 focus:ring-amber-500">
+                                    <span>Resp. Inscripto</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="md:col-span-1 bg-white/70 p-3 rounded-lg border border-amber-200">
+                            <label class="block text-xs font-semibold text-slate-700 mb-2">Estado</label>
+                            <div class="flex items-center space-x-4">
+                                <label class="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
+                                    <input type="radio" name="estado" value="Activo" checked class="text-amber-600 focus:ring-amber-500">
+                                    <span class="text-emerald-700 font-medium">Activo</span>
+                                </label>
+                                <label class="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
+                                    <input type="radio" name="estado" value="Inactivo" class="text-amber-600 focus:ring-amber-500">
+                                    <span class="text-rose-700 font-medium">Inactivo</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Banco / Homebanking</label>
+                            <input type="text" id="banco" class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Clave ARCA</label>
+                            <input type="text" id="arca" class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Clave Rentas</label>
+                            <input type="text" id="rentas" class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Clave ART</label>
+                            <input type="text" id="art" class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm font-mono">
                         </div>
                     </div>
 
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-700 mb-1">Banco <span class="text-slate-400 font-normal">(Opcional)</span></label>
-                        <input type="text" id="banco" placeholder="Ej: Galicia, Macro..." class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm">
+                    <div class="flex justify-end gap-2">
+                        <button type="button" id="btnCancelar" onclick="window.limpiarFormulario()" class="hidden bg-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-300 text-xs font-medium transition-colors">Cancelar</button>
+                        <button type="submit" id="btnGuardar" class="bg-amber-800 text-white px-5 py-2 rounded-lg hover:bg-amber-900 text-xs font-semibold transition-colors shadow-xs">Guardar Cliente</button>
                     </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-700 mb-1">Clave de ARCA <span class="text-slate-400 font-normal">(Opcional)</span></label>
-                        <input type="text" id="arca" placeholder="Clave fiscal" class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-700 mb-1">Clave de RENTAS <span class="text-slate-400 font-normal">(Opcional)</span></label>
-                        <input type="text" id="rentas" placeholder="Clave provincial" class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-700 mb-1">Clave de ART <span class="text-slate-400 font-normal">(Opcional)</span></label>
-                        <input type="text" id="art" placeholder="Clave aseguradora" class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm">
-                    </div>
-                </div>
-                <div class="flex justify-end space-x-2">
-                    <button type="button" id="btnCancelar" onclick="window.limpiarFormulario()" class="hidden bg-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-300 text-xs font-medium">Cancelar</button>
-                    <button type="submit" id="btnGuardar" class="bg-amber-700 text-white px-4 py-2 rounded-lg hover:bg-amber-800 text-xs font-medium shadow-xs">Guardar Cliente</button>
-                </div>
-            </form>
-        </div>
+                </form>
+            </div>
 
-        <!-- Buscador Predeterminado -->
-        <div class="mb-5">
-            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">Búsqueda Rápida</label>
-            <input type="text" id="buscador" placeholder="Empezá a tipear nombre, CUIT, condición, estado, banco o clave..." class="w-full px-4 py-2.5 bg-amber-50/50 border border-amber-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm placeholder-slate-400 shadow-xs">
-        </div>
+            <!-- Buscador -->
+            <div class="mb-4">
+                <input type="text" id="buscador" placeholder="🔍 Buscar por Nombre, CUIT, Clave, Banco, Condición..." class="w-full px-4 py-2.5 bg-amber-50/50 border border-amber-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm">
+            </div>
 
-        <!-- Contenedor Principal de la Lista -->
-        <div class="border border-amber-200 rounded-xl overflow-hidden shadow-xs bg-amber-50/20">
-            <div class="max-h-[500px] overflow-y-auto p-4 space-y-3" id="contenedorClientes">
-                <!-- Cargando desde Firebase -->
-                <div class="py-6 text-center text-slate-500 font-medium">Conectando con la base de datos...</div>
+            <!-- Listado de Clientes -->
+            <div id="contenedorClientes" class="space-y-3">
+                <div class="py-6 text-center text-slate-400 font-medium">Cargando datos...</div>
             </div>
         </div>
     </div>
