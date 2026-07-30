@@ -591,145 +591,146 @@
                     </button>
 
                     <button id="btnToggleForm" onclick="window.toggleFormulario()" class="bg-amber-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-amber-800 transition-colors shadow-sm">
-                        + Nuevo
+                        + Nuevo Cliente
                     </button>
 
-                    <button onclick="window.cerrarSesion()" class="bg-rose-100 text-rose-800 px-3 py-2 rounded-lg text-xs font-bold hover:bg-rose-200 transition-colors">
+                    <button onclick="window.cerrarSesion()" class="bg-slate-200 text-slate-700 px-3 py-2 rounded-lg text-xs font-medium hover:bg-slate-300 transition-colors shadow-sm">
                         Salir
                     </button>
                 </div>
             </header>
 
-            <!-- Modal Filtros Impresión -->
-            <div id="modalImprimir" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                <div class="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-amber-200">
-                    <div class="flex justify-between items-center mb-4 border-b pb-3">
-                        <h3 class="font-bold text-amber-950 text-base">Opciones de Impresión</h3>
-                        <button onclick="window.toggleModalImprimir()" class="text-slate-400 hover:text-slate-700 font-bold text-lg">✕</button>
-                    </div>
-                    
-                    <div class="space-y-4 mb-6">
+            <!-- CONTENEDOR DEL FORMULARIO (OCULTO POR DEFECTO) -->
+            <div id="formContainer" class="hidden mb-6 bg-amber-50/60 p-4 sm:p-5 rounded-xl border border-amber-200/80 shadow-inner">
+                <h2 class="text-base font-bold text-amber-950 mb-3 border-b border-amber-200/60 pb-2">Datos del Cliente</h2>
+                <form id="clientForm" class="space-y-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Condición Fiscal</label>
-                            <div class="space-y-2 bg-amber-50/50 p-3 rounded-xl border border-amber-100">
-                                <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
-                                    <input type="radio" name="filtroImpresionCondicion" value="Monotributista" checked class="text-amber-600 focus:ring-amber-500">
-                                    <span>Monotributistas</span>
-                                </label>
-                                <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
-                                    <input type="radio" name="filtroImpresionCondicion" value="Responsable Inscripto" class="text-amber-600 focus:ring-amber-500">
-                                    <span>Responsables Inscriptos</span>
-                                </label>
-                                <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
-                                    <input type="radio" name="filtroImpresionCondicion" value="Todos" class="text-amber-600 focus:ring-amber-500">
-                                    <span>Ambas Condiciones (Todas)</span>
-                                </label>
-                            </div>
+                            <label class="block text-xs font-bold text-amber-900 uppercase mb-1" for="nombre">Apellido y Nombre *</label>
+                            <input type="text" id="nombre" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm" placeholder="Ej: Pérez, Juan Carlos">
                         </div>
-
                         <div>
-                            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Estado del Cliente</label>
-                            <div class="space-y-2 bg-amber-50/50 p-3 rounded-xl border border-amber-100">
-                                <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
-                                    <input type="radio" name="filtroImpresionEstado" value="Activo" checked class="text-amber-600 focus:ring-amber-500">
-                                    <span class="text-emerald-800 font-semibold">Solo Activos</span>
-                                </label>
-                                <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
-                                    <input type="radio" name="filtroImpresionEstado" value="Inactivo" class="text-amber-600 focus:ring-amber-500">
-                                    <span class="text-rose-800 font-semibold">Solo Inactivos</span>
-                                </label>
-                                <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
-                                    <input type="radio" name="filtroImpresionEstado" value="Todos" class="text-amber-600 focus:ring-amber-500">
-                                    <span>Todos (Activos e Inactivos)</span>
-                                </label>
-                            </div>
+                            <label class="block text-xs font-bold text-amber-900 uppercase mb-1" for="cuit">CUIT *</label>
+                            <input type="text" id="cuit" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm font-mono" placeholder="20-12345678-9">
                         </div>
                     </div>
 
-                    <div class="flex justify-end space-x-2">
-                        <button onclick="window.toggleModalImprimir()" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-300 text-xs font-medium">Cancelar</button>
-                        <button onclick="window.ejecutarImpresion()" class="bg-amber-800 text-white px-5 py-2 rounded-lg hover:bg-amber-900 text-xs font-semibold shadow-xs">Generar e Imprimir</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Formulario Cliente -->
-            <div id="formContainer" class="hidden mb-6 transition-all">
-                <form id="clientForm" class="bg-amber-50/90 p-5 rounded-xl border border-amber-200 shadow-inner">
-                    <h2 class="text-sm font-bold text-amber-950 uppercase tracking-wide mb-3">Datos del Cliente</h2>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-700 mb-1">Apellido y Nombre *</label>
-                            <input type="text" id="nombre" required class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-700 mb-1">CUIT * <span class="text-slate-400 font-normal">(Validación automática)</span></label>
-                            <input type="text" id="cuit" required placeholder="Ej: 20-12345678-9" class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm font-mono">
-                        </div>
-                        
-                        <div class="md:col-span-1 bg-white/70 p-3 rounded-lg border border-amber-200">
-                            <label class="block text-xs font-semibold text-slate-700 mb-2">Condición Fiscal</label>
-                            <div class="flex items-center space-x-4">
-                                <label class="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
-                                    <input type="radio" name="condicion" value="Monotributista" class="text-amber-600 focus:ring-amber-500">
-                                    <span>Monotributista</span>
-                                </label>
-                                <label class="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
-                                    <input type="radio" name="condicion" value="Responsable Inscripto" class="text-amber-600 focus:ring-amber-500">
-                                    <span>Resp. Inscripto</span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <div class="md:col-span-1 bg-white/70 p-3 rounded-lg border border-amber-200">
-                            <label class="block text-xs font-semibold text-slate-700 mb-2">Estado</label>
-                            <div class="flex items-center space-x-4">
-                                <label class="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
-                                    <input type="radio" name="estado" value="Activo" checked class="text-amber-600 focus:ring-amber-500">
-                                    <span class="text-emerald-700 font-medium">Activo</span>
-                                </label>
-                                <label class="flex items-center space-x-1.5 text-xs text-slate-700 cursor-pointer">
-                                    <input type="radio" name="estado" value="Inactivo" class="text-amber-600 focus:ring-amber-500">
-                                    <span class="text-rose-700 font-medium">Inactivo</span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-700 mb-1">Banco / Homebanking</label>
-                            <input type="text" id="banco" class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-700 mb-1">Clave ARCA</label>
-                            <input type="text" id="arca" class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm font-mono">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-700 mb-1">Clave Rentas</label>
-                            <input type="text" id="rentas" class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm font-mono">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-700 mb-1">Clave ART</label>
-                            <input type="text" id="art" class="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm font-mono">
+                    <!-- Condición IVA / Fiscal -->
+                    <div>
+                        <label class="block text-xs font-bold text-amber-900 uppercase mb-2">Condición Fiscal</label>
+                        <div class="flex flex-wrap gap-4 text-xs font-medium text-slate-700">
+                            <label class="inline-flex items-center gap-1.5 cursor-pointer">
+                                <input type="radio" name="condicion" value="Monotributo" class="accent-amber-700"> Monotributo
+                            </label>
+                            <label class="inline-flex items-center gap-1.5 cursor-pointer">
+                                <input type="radio" name="condicion" value="Resp. Inscripto" class="accent-amber-700"> Resp. Inscripto
+                            </label>
+                            <label class="inline-flex items-center gap-1.5 cursor-pointer">
+                                <input type="radio" name="condicion" value="Exento" class="accent-amber-700"> Exento
+                            </label>
+                            <label class="inline-flex items-center gap-1.5 cursor-pointer">
+                                <input type="radio" name="condicion" value="Cons. Final" class="accent-amber-700"> Cons. Final
+                            </label>
                         </div>
                     </div>
 
-                    <div class="flex justify-end gap-2">
-                        <button type="button" id="btnCancelar" onclick="window.limpiarFormulario()" class="hidden bg-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-300 text-xs font-medium transition-colors">Cancelar</button>
-                        <button type="submit" id="btnGuardar" class="bg-amber-800 text-white px-5 py-2 rounded-lg hover:bg-amber-900 text-xs font-semibold transition-colors shadow-xs">Guardar Cliente</button>
+                    <!-- Estado del Cliente -->
+                    <div>
+                        <label class="block text-xs font-bold text-amber-900 uppercase mb-2">Estado</label>
+                        <div class="flex gap-4 text-xs font-medium text-slate-700">
+                            <label class="inline-flex items-center gap-1.5 cursor-pointer">
+                                <input type="radio" name="estado" value="Activo" checked class="accent-emerald-700"> Activo
+                            </label>
+                            <label class="inline-flex items-center gap-1.5 cursor-pointer">
+                                <input type="radio" name="estado" value="Inactivo" class="accent-rose-700"> Inactivo
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-1">
+                        <div>
+                            <label class="block text-xs font-bold text-amber-900 uppercase mb-1" for="banco">Banco / CBU</label>
+                            <input type="text" id="banco" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs" placeholder="Banco o CBU">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-amber-900 uppercase mb-1" for="arca">Clave ARCA</label>
+                            <input type="text" id="arca" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs font-mono" placeholder="Clave ARCA/AFIP">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-amber-900 uppercase mb-1" for="rentas">Clave Rentas</label>
+                            <input type="text" id="rentas" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs font-mono" placeholder="Clave Rentas">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-amber-900 uppercase mb-1" for="art">Clave ART</label>
+                            <input type="text" id="art" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs font-mono" placeholder="Clave ART">
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end gap-2 pt-2">
+                        <button type="button" id="btnCancelar" onclick="window.limpiarFormulario()" class="hidden bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-slate-300 transition-colors">
+                            Cancelar
+                        </button>
+                        <button type="submit" id="btnGuardar" class="bg-amber-800 text-white px-5 py-2 rounded-lg text-xs font-bold hover:bg-amber-900 transition-colors shadow-sm">
+                            Guardar Cliente
+                        </button>
                     </div>
                 </form>
             </div>
 
-            <!-- Buscador -->
-            <div class="mb-4">
-                <input type="text" id="buscador" placeholder="🔍 Buscar por Nombre, CUIT, Clave, Banco, Condición..." class="w-full px-4 py-2.5 bg-amber-50/50 border border-amber-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm">
-            </div>
+            <!-- BARRA DE BÚSQUEDA Y LISTADO -->
+            <div class="space-y-4">
+                <div class="relative">
+                    <input type="text" id="buscador" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-amber-200/80 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-xs" placeholder="Buscar por nombre, CUIT, estado, banco o clave...">
+                    <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                    </svg>
+                </div>
 
-            <!-- Listado -->
-            <div id="contenedorClientes" class="space-y-3">
-                <div class="py-6 text-center text-slate-400 font-medium">Cargando datos...</div>
+                <!-- CONTENEDOR DE CARDS DE CLIENTES -->
+                <div id="contenedorClientes" class="space-y-3">
+                    <!-- Se genera dinámicamente desde JS -->
+                </div>
             </div>
         </div>
     </div>
+
+    <!-- MODAL DE FILTROS DE IMPRESIÓN -->
+    <div id="modalImprimir" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-amber-200">
+            <h3 class="text-base font-bold text-slate-900 mb-4 border-b border-slate-100 pb-2">Opciones de Impresión</h3>
+            
+            <div class="space-y-4 text-xs font-medium text-slate-700">
+                <div>
+                    <label class="block font-bold text-amber-900 uppercase mb-2">Filtrar por Condición</label>
+                    <div class="space-y-1.5">
+                        <label class="flex items-center gap-2"><input type="radio" name="filtroImpresionCondicion" value="Todos" checked class="accent-amber-700"> Todos</label>
+                        <label class="flex items-center gap-2"><input type="radio" name="filtroImpresionCondicion" value="Monotributo" class="accent-amber-700"> Monotributo</label>
+                        <label class="flex items-center gap-2"><input type="radio" name="filtroImpresionCondicion" value="Resp. Inscripto" class="accent-amber-700"> Resp. Inscripto</label>
+                        <label class="flex items-center gap-2"><input type="radio" name="filtroImpresionCondicion" value="Exento" class="accent-amber-700"> Exento</label>
+                        <label class="flex items-center gap-2"><input type="radio" name="filtroImpresionCondicion" value="Cons. Final" class="accent-amber-700"> Cons. Final</label>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block font-bold text-amber-900 uppercase mb-2">Filtrar por Estado</label>
+                    <div class="space-y-1.5">
+                        <label class="flex items-center gap-2"><input type="radio" name="filtroImpresionEstado" value="Todos" checked class="accent-amber-700"> Todos</label>
+                        <label class="flex items-center gap-2"><input type="radio" name="filtroImpresionEstado" value="Activo" class="accent-amber-700"> Solo Activos</label>
+                        <label class="flex items-center gap-2"><input type="radio" name="filtroImpresionEstado" value="Inactivo" class="accent-amber-700"> Solo Inactivos</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 mt-6 pt-3 border-t border-slate-100">
+                <button onclick="window.toggleModalImprimir()" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-slate-300 transition-colors">
+                    Cancelar
+                </button>
+                <button onclick="window.ejecutarImpresion()" class="bg-amber-800 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-amber-900 transition-colors shadow-sm">
+                    Imprimir Reporte
+                </button>
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>
