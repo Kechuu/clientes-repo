@@ -1,1121 +1,890 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestión de Clientes - Estudio Contable</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Firebase SDK v12 -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
-        import { 
-            getFirestore, 
-            collection, 
-            onSnapshot, 
-            addDoc, 
-            updateDoc, 
-            deleteDoc, 
-            doc 
-        } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
-
-        // ==========================================
-        // CONFIGURACIÓN DE FIREBASE
-        // ==========================================
-        const firebaseConfig = {
-            apiKey: "AIzaSyBMr9S5Hx8KhZto1K-TM1tqdpoShb8Cd5I",
-            authDomain: "clientes-25157.firebaseapp.com",
-            projectId: "clientes-25157",
-            storageBucket: "clientes-25157.firebasestorage.app",
-            messagingSenderId: "964761913555",
-            appId: "1:964761913555:web:f4591e75b00bd68f956c26"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-
-        // ==========================================
-        // CREDENCIALES DE ACCESO LOCAL
-        // ==========================================
-        const CORREOS_AUTORIZADOS = [
-            "jesusangelcabrera255@gmail.com",
-            "laurabdeiana@gmail.com"
-        ];
-        
-        const CLAVE_MESTRA = "Estudio2026*";
-
-        let clientes = [];
-        let idEditando = null;
-        let idClienteHonorarios = null;
-        let unsubscribeRealtime = null;
-
-        // Arreglos para períodos dinámicos
-        let periodosModal = [];
-        let periodosFormNuevo = [];
-
-        // Referencias DOM
-        let loginSection, appSection, userEmailSpan, clientForm, formContainer, btnToggleForm;
-        let nombreInput, cuitInput, bancoInput, arcaInput, rentasInput, buscadorInput;
-        let contenedorClientes, btnCancelar, btnGuardar, modalImprimir, modalHonorarios;
-        let formHonorarios, honorariosFecha, honorariosMonto, listaHistorialHonorarios;
-        let inputPeriodoModal, containerPeriodosModal, btnAgregarPeriodoModal;
-        
-        // Referencias para honorarios en Formulario Nuevo
-        let fechaHonorarioNuevoInput, montoHonorarioNuevoInput, inputPeriodoForm, containerPeriodosForm, btnAgregarPeriodoForm, seccionHonorariosForm;
-
-        window.addEventListener('DOMContentLoaded', () => {
-            // Inicializar Referencias DOM
-            loginSection = document.getElementById('loginSection');
-            appSection = document.getElementById('appSection');
-            userEmailSpan = document.getElementById('userEmail');
-            clientForm = document.getElementById('clientForm');
-            formContainer = document.getElementById('formContainer');
-            btnToggleForm = document.getElementById('btnToggleForm');
-            nombreInput = document.getElementById('nombre');
-            cuitInput = document.getElementById('cuit');
-            bancoInput = document.getElementById('banco');
-            arcaInput = document.getElementById('arca');
-            rentasInput = document.getElementById('rentas');
-            buscadorInput = document.getElementById('buscador');
-            contenedorClientes = document.getElementById('contenedorClientes');
-            btnCancelar = document.getElementById('btnCancelar');
-            btnGuardar = document.getElementById('btnGuardar');
-            modalImprimir = document.getElementById('modalImprimir');
-            modalHonorarios = document.getElementById('modalHonorarios');
-            formHonorarios = document.getElementById('formHonorarios');
-            honorariosFecha = document.getElementById('honorariosFecha');
-            honorariosMonto = document.getElementById('honorariosMonto');
-            listaHistorialHonorarios = document.getElementById('listaHistorialHonorarios');
-
-            // Elementos Períodos Modal
-            inputPeriodoModal = document.getElementById('input-periodo');
-            containerPeriodosModal = document.getElementById('periodos-container');
-            btnAgregarPeriodoModal = document.getElementById('btn-agregar-periodo');
-
-            // Elementos Honorarios Formulario Nuevo
-            seccionHonorariosForm = document.getElementById('seccionHonorariosForm');
-            fechaHonorarioNuevoInput = document.getElementById('fechaHonorarioNuevo');
-            montoHonorarioNuevoInput = document.getElementById('montoHonorarioNuevo');
-            inputPeriodoForm = document.getElementById('input-periodo-form');
-            containerPeriodosForm = document.getElementById('periodos-container-form');
-            btnAgregarPeriodoForm = document.getElementById('btn-agregar-periodo-form');
-
-            // Eventos Períodos Modal
-            btnAgregarPeriodoModal.addEventListener('click', () => agregarPeriodo(inputPeriodoModal, periodosModal, containerPeriodosModal, 'modal'));
-            inputPeriodoModal.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    agregarPeriodo(inputPeriodoModal, periodosModal, containerPeriodosModal, 'modal');
-                }
-            });
-
-            // Eventos Períodos Formulario Nuevo
-            btnAgregarPeriodoForm.addEventListener('click', () => agregarPeriodo(inputPeriodoForm, periodosFormNuevo, containerPeriodosForm, 'form'));
-            inputPeriodoForm.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    agregarPeriodo(inputPeriodoForm, periodosFormNuevo, containerPeriodosForm, 'form');
-                }
-            });
-
-            // Formateador CUIT
-            cuitInput.addEventListener('input', (e) => {
-                let value = e.target.value.replace(/\D/g, '');
-                if (value.length > 11) value = value.slice(0, 11);
-                if (value.length > 10) {
-                    value = value.replace(/^(\d{2})(\d{8})(\d{1})$/, '$1-$2-$3');
-                } else if (value.length > 2) {
-                    value = value.replace(/^(\d{2})(\d{0,8})/, '$1-$2');
-                }
-                e.target.value = value;
-            });
-
-            // Buscador en vivo
-            buscadorInput.addEventListener('input', function() {
-                mostrarClientes(buscadorInput.value);
-            });
-
-            // Submit del Formulario Cliente
-            clientForm.addEventListener('submit', async function(e) {
-                e.preventDefault();
-                const cuitLimpio = cuitInput.value.trim();
-
-                if (!validarCUIT(cuitLimpio)) {
-                    mostrarToast("El CUIT ingresado no es válido.", "error");
-                    cuitInput.focus();
-                    return;
-                }
-
-                const condicionSeleccionada = document.querySelector('input[name="condicion"]:checked');
-                const estadoSeleccionado = document.querySelector('input[name="estado"]:checked');
-                
-                const datosCliente = {
-                    nombre: nombreInput.value.trim(),
-                    cuit: cuitLimpio,
-                    condicion: condicionSeleccionada ? condicionSeleccionada.value : '',
-                    estado: estadoSeleccionado ? estadoSeleccionado.value : 'Activo',
-                    banco: bancoInput.value.trim(),
-                    arca: arcaInput.value.trim(),
-                    rentas: rentasInput.value.trim(),
-                    ultimaActualizacion: obtenerFechaHoraActual()
-                };
-
-                try {
-                    if (idEditando === null) {
-                        // Es un cliente nuevo
-                        const montoNuevo = parseFloat(montoHonorarioNuevoInput.value);
-                        let honorariosIniciales = [];
-
-                        if (!isNaN(montoNuevo) && montoNuevo > 0) {
-                            if (periodosFormNuevo.length === 0) {
-                                mostrarToast("Agregaste un monto pero no ingresaste ningún período para el pago.", "error");
-                                inputPeriodoForm.focus();
-                                return;
-                            }
-
-                            const medioPagoNuevo = document.querySelector('input[name="medio_pago_form"]:checked').value;
-                            const tipoComprobanteNuevo = document.querySelector('input[name="tipo_comprobante_form"]:checked').value;
-
-                            honorariosIniciales.push({
-                                fecha: fechaHonorarioNuevoInput.value || new Date().toISOString().split('T')[0],
-                                periodos: [...periodosFormNuevo],
-                                periodoTexto: periodosFormNuevo.join(', '),
-                                monto: montoNuevo,
-                                medioPago: medioPagoNuevo,
-                                tipoComprobante: tipoComprobanteNuevo,
-                                fechaRegistro: obtenerFechaHoraActual()
-                            });
-                        }
-
-                        datosCliente.honorarios = honorariosIniciales;
-                        await addDoc(collection(db, "clientes"), datosCliente);
-                        mostrarToast("Cliente registrado exitosamente.");
-                    } else {
-                        // Modificación de cliente existente
-                        const docRef = doc(db, "clientes", idEditando);
-                        await updateDoc(docRef, datosCliente);
-                        mostrarToast("Cliente actualizado exitosamente.");
-                    }
-                    window.limpiarFormulario();
-                } catch (error) {
-                    console.error("Error al guardar: ", error);
-                    mostrarToast("Hubo un error al guardar en la base de datos.", "error");
-                }
-            });
-
-            // Submit Formulario Cargar Honorarios Modal
-            formHonorarios.addEventListener('submit', async function(e) {
-                e.preventDefault();
-                if (!idClienteHonorarios) return;
-
-                const cliente = clientes.find(c => c.id === idClienteHonorarios);
-                if (!cliente) return;
-
-                if (periodosModal.length === 0) {
-                    mostrarToast("Debes agregar al menos un período.", "error");
-                    inputPeriodoModal.focus();
-                    return;
-                }
-
-                const medioPago = document.querySelector('input[name="medio_pago"]:checked').value;
-                const tipoComprobante = document.querySelector('input[name="tipo_comprobante"]:checked').value;
-
-                const nuevoPago = {
-                    fecha: honorariosFecha.value,
-                    periodos: [...periodosModal],
-                    periodoTexto: periodosModal.join(', '),
-                    monto: parseFloat(honorariosMonto.value),
-                    medioPago: medioPago,
-                    tipoComprobante: tipoComprobante,
-                    fechaRegistro: obtenerFechaHoraActual()
-                };
-
-                const historialActual = cliente.honorarios || [];
-                historialActual.push(nuevoPago);
-
-                try {
-                    const docRef = doc(db, "clientes", idClienteHonorarios);
-                    await updateDoc(docRef, {
-                        honorarios: historialActual,
-                        ultimaActualizacion: obtenerFechaHoraActual()
-                    });
-                    
-                    mostrarToast("Pago de honorarios registrado correctamente.");
-                    honorariosFecha.value = '';
-                    honorariosMonto.value = '';
-                    periodosModal = [];
-                    renderizarPeriodos(periodosModal, containerPeriodosModal, 'modal');
-                    renderizarHistorialModal(historialActual);
-                } catch (error) {
-                    console.error("Error al registrar honorario: ", error);
-                    mostrarToast("No se pudo guardar el pago.", "error");
-                }
-            });
-
-            // Comprobar sesión activa
-            const usuarioGuardado = sessionStorage.getItem('usuarioEstudio');
-            if (usuarioGuardado && CORREOS_AUTORIZADOS.includes(usuarioGuardado)) {
-                loginSection.classList.add('hidden');
-                appSection.classList.remove('hidden');
-                if (userEmailSpan) userEmailSpan.textContent = usuarioGuardado;
-                suscribirClientes();
-            }
-        });
-
-        // ==========================================
-        // GESTIÓN DE PERÍODOS DINÁMICOS
-        // ==========================================
-        function agregarPeriodo(inputElem, arrayTarget, containerElem, tipo) {
-            const valor = inputElem.value.trim();
-            if (valor !== '') {
-                arrayTarget.push(valor);
-                inputElem.value = '';
-                renderizarPeriodos(arrayTarget, containerElem, tipo);
-            }
-        }
-
-        window.eliminarPeriodo = function(index, tipo) {
-            if (tipo === 'modal') {
-                periodosModal.splice(index, 1);
-                renderizarPeriodos(periodosModal, containerPeriodosModal, 'modal');
-            } else {
-                periodosFormNuevo.splice(index, 1);
-                renderizarPeriodos(periodosFormNuevo, containerPeriodosForm, 'form');
-            }
-        };
-
-        function renderizarPeriodos(arrayTarget, containerElem, tipo) {
-            containerElem.innerHTML = '';
-            arrayTarget.forEach((periodo, index) => {
-                const chip = document.createElement('div');
-                chip.className = 'bg-amber-100 text-amber-900 px-2.5 py-1 rounded-full flex items-center gap-1.5 text-xs font-semibold border border-amber-200';
-                chip.innerHTML = `
-                    <span>${periodo}</span>
-                    <button type="button" onclick="eliminarPeriodo(${index}, '${tipo}')" class="text-rose-600 font-bold hover:text-rose-800 focus:outline-none ml-1">✕</button>
-                `;
-                containerElem.appendChild(chip);
-            });
-        }
-
-        // ==========================================
-        // MANEJO DE SESIÓN Y AUTENTICACIÓN LOCAL
-        // ==========================================
-        window.loginConClave = function(e) {
-            if (e) e.preventDefault();
-
-            const emailIngresado = document.getElementById('inputEmail').value.toLowerCase().trim();
-            const claveIngresada = document.getElementById('inputPassword').value;
-
-            if (!emailIngresado || !claveIngresada) {
-                mostrarToast("Por favor, completa todos los campos.", "error");
-                return;
-            }
-
-            const autorizadosNormalizados = CORREOS_AUTORIZADOS.map(email => email.toLowerCase().trim());
-
-            if (!autorizadosNormalizados.includes(emailIngresado)) {
-                mostrarToast(`El correo ${emailIngresado} no está autorizado.`, "error");
-                return;
-            }
-
-            if (claveIngresada !== CLAVE_MESTRA) {
-                mostrarToast("Contraseña incorrecta.", "error");
-                return;
-            }
-
-            loginSection.classList.add('hidden');
-            appSection.classList.remove('hidden');
-            if (userEmailSpan) userEmailSpan.textContent = emailIngresado;
-
-            sessionStorage.setItem('usuarioEstudio', emailIngresado);
-            suscribirClientes();
-            mostrarToast("Sesión iniciada correctamente.");
-        };
-
-        window.cerrarSesion = function() {
-            sessionStorage.removeItem('usuarioEstudio');
-            loginSection.classList.remove('hidden');
-            appSection.classList.add('hidden');
-            document.getElementById('inputPassword').value = '';
-            
-            if (unsubscribeRealtime) {
-                unsubscribeRealtime();
-                unsubscribeRealtime = null;
-            }
-        };
-
-        // ==========================================
-        // NOTIFICACIÓN TOAST Y UTILIDADES
-        // ==========================================
-        function mostrarToast(mensaje, tipo = 'exito') {
-            const toast = document.createElement('div');
-            const bgClass = tipo === 'exito' ? 'bg-emerald-800' : 'bg-rose-800';
-            toast.className = `fixed bottom-5 right-5 ${bgClass} text-white px-4 py-3 rounded-xl shadow-lg z-50 text-sm font-medium transition-all duration-300 transform translate-y-2 opacity-0 max-w-sm`;
-            toast.textContent = mensaje;
-            document.body.appendChild(toast);
-
-            setTimeout(() => {
-                toast.classList.remove('translate-y-2', 'opacity-0');
-            }, 10);
-
-            setTimeout(() => {
-                toast.classList.add('opacity-0');
-                setTimeout(() => toast.remove(), 300);
-            }, 4000);
-        }
-
-        function suscribirClientes() {
-            unsubscribeRealtime = onSnapshot(collection(db, "clientes"), (snapshot) => {
-                clientes = snapshot.docs.map(docSnap => ({
-                    id: docSnap.id,
-                    ...docSnap.data()
-                }));
-                mostrarClientes(buscadorInput ? buscadorInput.value : '');
-            }, (error) => {
-                console.error("Error en tiempo real: ", error);
-                if (contenedorClientes) {
-                    contenedorClientes.innerHTML = `<div class="py-6 text-center text-rose-600 font-medium">Error de permisos o conexión con Firestore.</div>`;
-                }
-            });
-        }
-
-        window.toggleFormulario = function() {
-            if (formContainer.classList.contains('hidden')) {
-                formContainer.classList.remove('hidden');
-                btnToggleForm.textContent = "✕ Cerrar Formulario";
-                btnToggleForm.className = "bg-slate-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-slate-800 transition-colors shadow-sm";
-                nombreInput.focus();
-            } else {
-                limpiarFormulario();
-            }
-        };
-
-        window.toggleModalImprimir = function() {
-            modalImprimir.classList.toggle('hidden');
-        };
-
-        window.abrirModalHonorarios = function(id) {
-            idClienteHonorarios = id;
-            const cliente = clientes.find(c => c.id === id);
-            if (!cliente) return;
-
-            document.getElementById('nombreClienteHonorarios').textContent = cliente.nombre;
-            
-            const hoy = new Date().toISOString().split('T')[0];
-            honorariosFecha.value = hoy;
-            honorariosMonto.value = '';
-            periodosModal = [];
-            renderizarPeriodos(periodosModal, containerPeriodosModal, 'modal');
-
-            renderizarHistorialModal(cliente.honorarios || []);
-            modalHonorarios.classList.remove('hidden');
-        };
-
-        window.cerrarModalHonorarios = function() {
-            modalHonorarios.classList.add('hidden');
-            idClienteHonorarios = null;
-        };
-
-        function renderizarHistorialModal(historial) {
-            listaHistorialHonorarios.innerHTML = '';
-            if (!historial || historial.length === 0) {
-                listaHistorialHonorarios.innerHTML = `<p class="text-xs text-slate-400 italic text-center py-2">No hay pagos registrados anteriormente.</p>`;
-                return;
-            }
-
-            const ordenados = [...historial].reverse();
-            ordenados.forEach(pago => {
-                const item = document.createElement('div');
-                item.className = 'flex justify-between items-center bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs';
-                
-                const periodosMostrar = pago.periodoTexto || (pago.periodos ? pago.periodos.join(', ') : pago.periodo);
-                const medioPagoTexto = pago.medioPago ? `• ${pago.medioPago}` : '';
-                const compTexto = pago.tipoComprobante ? `• ${pago.tipoComprobante}` : '';
-
-                item.innerHTML = `
-                    <div>
-                        <span class="font-bold text-slate-800">Períodos: ${periodosMostrar}</span>
-                        <span class="block text-[11px] text-slate-500">Fecha: ${pago.fecha} ${medioPagoTexto} ${compTexto}</span>
-                    </div>
-                    <span class="font-bold text-emerald-700 text-sm">$${Number(pago.monto).toLocaleString('es-AR', {minimumFractionDigits: 2})}</span>
-                `;
-                listaHistorialHonorarios.appendChild(item);
-            });
-        }
-
-        function obtenerFechaHoraActual() {
-            const ahora = new Date();
-            const dia = String(ahora.getDate()).padStart(2, '0');
-            const mes = String(ahora.getMonth() + 1).padStart(2, '0');
-            const anio = ahora.getFullYear();
-            const horas = String(ahora.getHours()).padStart(2, '0');
-            const minutos = String(ahora.getMinutes()).padStart(2, '0');
-            return `${dia}/${mes}/${anio} ${horas}:${minutos}`;
-        }
-
-        function validarCUIT(cuit) {
-            let cleanerCuit = cuit.replace(/[^0-9]/g, '');
-            if (cleanerCuit.length !== 11) return false;
-
-            let tipo = cleanerCuit.substring(0, 2);
-            if (!['20', '23', '24', '27', '30', '33', '34'].includes(tipo)) return false;
-
-            let acumulado = 0;
-            let digitos = cleanerCuit.split('');
-            let digitoVerificador = parseInt(digitos.pop());
-            let bazos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
-
-            for (let i = 0; i < 10; i++) {
-                acumulado += parseInt(digitos[i]) * bazos[i];
-            }
-
-            let resultado = 11 - (acumulado % 11);
-            if (resultado === 11) resultado = 0;
-            if (resultado === 10) resultado = 9;
-
-            return resultado === digitoVerificador;
-        }
-
-        window.mostrarClientes = function(filtro = '') {
-            clientes.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es', { sensitivity: 'base' }));
-            contenedorClientes.innerHTML = '';
-            
-            const textoFiltro = filtro.toLowerCase();
-            const clientesFiltrados = clientes.filter(c => 
-                (c.nombre && c.nombre.toLowerCase().includes(textoFiltro)) || 
-                (c.cuit && c.cuit.toLowerCase().includes(textoFiltro)) ||
-                (c.banco && c.banco.toLowerCase().includes(textoFiltro)) ||
-                (c.arca && c.arca.toLowerCase().includes(textoFiltro)) ||
-                (c.rentas && c.rentas.toLowerCase().includes(textoFiltro)) ||
-                (c.condicion && c.condicion.toLowerCase().includes(textoFiltro)) ||
-                (c.estado && c.estado.toLowerCase().includes(textoFiltro))
-            );
-
-            if (clientesFiltrados.length === 0) {
-                contenedorClientes.innerHTML = `<div class="py-6 text-center text-amber-900/70 font-medium">No se encontraron resultados</div>`;
-                return;
-            }
-
-            clientesFiltrados.forEach((cliente, index) => {
-                const card = document.createElement('div');
-                card.className = 'border border-amber-200/80 rounded-xl p-4 bg-white/95 shadow-sm hover:shadow-md transition-shadow';
-                
-                const condicionTexto = cliente.condicion ? ` (${cliente.condicion})` : '';
-                const esActivo = (cliente.estado === 'Activo' || !cliente.estado);
-                const estadoBadge = esActivo 
-                    ? `<span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Activo</span>`
-                    : `<span class="bg-rose-100 text-rose-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Inactivo</span>`;
-
-                const ultimaAct = cliente.ultimaActualizacion ? `• Últ. Act: ${cliente.ultimaActualizacion}` : '';
-
-                let textoUltimoPago = '<span class="text-slate-400 italic">Sin pagos cargados</span>';
-                if (cliente.honorarios && cliente.honorarios.length > 0) {
-                    const ultimo = cliente.honorarios[cliente.honorarios.length - 1];
-                    const pTexto = ultimo.periodoTexto || (ultimo.periodos ? ultimo.periodos.join(', ') : ultimo.periodo);
-                    textoUltimoPago = `<span class="font-bold text-emerald-800">$${Number(ultimo.monto).toLocaleString('es-AR', {minimumFractionDigits: 2})}</span> <span class="text-xs text-slate-500">(${pTexto} - ${ultimo.fecha})</span>`;
-                }
-
-                card.innerHTML = `
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                        <div class="flex items-center space-x-3">
-                            <button onclick="window.toggleDetalles('${cliente.id}')" id="btn-toggle-${cliente.id}" class="w-8 h-8 flex items-center justify-center bg-amber-100 text-amber-900 font-bold rounded-full hover:bg-amber-200 transition-colors focus:outline-none shadow-xs">+</button>
-                            <div>
-                                <div class="flex items-center gap-2 flex-wrap">
-                                    <span class="text-xs font-extrabold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-md">#${index + 1}</span>
-                                    <h3 class="font-bold text-slate-800 text-base">${cliente.nombre}<span class="text-xs font-medium text-amber-800">${condicionTexto}</span></h3>
-                                    ${estadoBadge}
-                                </div>
-                                <div class="flex items-center gap-2 flex-wrap mt-0.5">
-                                    <p class="text-xs text-slate-500 font-mono">CUIT: ${cliente.cuit}</p>
-                                    <p class="text-[11px] text-slate-400 font-medium">${ultimaAct}</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="flex items-center space-x-2 self-end sm:self-center">
-                            <button onclick="window.copiarDato('${cliente.cuit}', this)" class="bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 text-xs font-medium transition-colors shadow-xs">Copiar CUIT</button>
-                            <button onclick="window.editarCliente('${cliente.id}')" class="text-amber-800 hover:text-amber-950 font-semibold text-xs px-2 py-1">Modificar</button>
-                            <button onclick="window.eliminarCliente('${cliente.id}')" class="text-rose-600 hover:text-rose-800 font-semibold text-xs px-2 py-1">Eliminar</button>
-                        </div>
-                    </div>
-                    <div id="detalles-${cliente.id}" class="hidden mt-4 pt-4 border-t border-amber-100 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                        <div class="bg-amber-50/70 p-3 rounded-lg border border-amber-100/80 flex flex-col justify-between">
-                            <div>
-                                <span class="block text-xs font-bold text-amber-900 uppercase tracking-wide">Banco</span>
-                                <span class="text-sm font-medium text-slate-700 break-all">${cliente.banco || '<span class="text-slate-400 italic">No especificado</span>'}</span>
-                            </div>
-                            ${cliente.banco ? `<button onclick="window.copiarDato('${cliente.banco}', this)" class="mt-3 bg-amber-700 text-white py-1.5 px-2.5 rounded-md hover:bg-amber-800 text-xs font-medium self-start transition-colors shadow-xs">Copiar Banco</button>` : ''}
-                        </div>
-                        <div class="bg-amber-50/70 p-3 rounded-lg border border-amber-100/80 flex flex-col justify-between">
-                            <div>
-                                <span class="block text-xs font-bold text-amber-900 uppercase tracking-wide">Clave ARCA</span>
-                                <span class="text-sm font-mono text-slate-700 break-all">${cliente.arca || '<span class="text-slate-400 italic">No especificada</span>'}</span>
-                            </div>
-                            ${cliente.arca ? `<button onclick="window.copiarDato('${cliente.arca}', this)" class="mt-3 bg-amber-700 text-white py-1.5 px-2.5 rounded-md hover:bg-amber-800 text-xs font-medium self-start transition-colors shadow-xs">Copiar ARCA</button>` : ''}
-                        </div>
-                        <div class="bg-amber-50/70 p-3 rounded-lg border border-amber-100/80 flex flex-col justify-between">
-                            <div>
-                                <span class="block text-xs font-bold text-amber-900 uppercase tracking-wide">Clave Rentas</span>
-                                <span class="text-sm font-mono text-slate-700 break-all">${cliente.rentas || '<span class="text-slate-400 italic">No especificada</span>'}</span>
-                            </div>
-                            ${cliente.rentas ? `<button onclick="window.copiarDato('${cliente.rentas}', this)" class="mt-3 bg-amber-700 text-white py-1.5 px-2.5 rounded-md hover:bg-amber-800 text-xs font-medium self-start transition-colors shadow-xs">Copiar Rentas</button>` : ''}
-                        </div>
-                        <div class="bg-emerald-50/80 p-3 rounded-lg border border-emerald-200/80 flex flex-col justify-between">
-                            <div>
-                                <span class="block text-xs font-bold text-emerald-900 uppercase tracking-wide">Honorarios</span>
-                                <span class="text-sm font-mono text-slate-700 break-all mt-1 block">${textoUltimoPago}</span>
-                            </div>
-                            <button onclick="window.abrirModalHonorarios('${cliente.id}')" class="mt-3 bg-emerald-700 text-white py-1.5 px-2.5 rounded-md hover:bg-emerald-800 text-xs font-medium self-start transition-colors shadow-xs">Cargar Honorarios</button>
-                        </div>
-                    </div>
-                `;
-                contenedorClientes.appendChild(card);
-            });
-        };
-
-        window.toggleDetalles = function(id) {
-            const panel = document.getElementById(`detalles-${id}`);
-            const boton = document.getElementById(`btn-toggle-${id}`);
-            if (panel.classList.contains('hidden')) {
-                panel.classList.remove('hidden');
-                boton.textContent = '-';
-                boton.className = 'w-8 h-8 flex items-center justify-center bg-amber-800 text-white font-bold rounded-full hover:bg-amber-900 transition-colors focus:outline-none shadow-xs';
-            } else {
-                panel.classList.add('hidden');
-                boton.textContent = '+';
-                boton.className = 'w-8 h-8 flex items-center justify-center bg-amber-100 text-amber-900 font-bold rounded-full hover:bg-amber-200 transition-colors focus:outline-none shadow-xs';
-            }
-        };
-
-        window.copiarDato = function(texto, boton) {
-            let textoACopiar = texto;
-            if (validarCUIT(texto)) {
-                textoACopiar = texto.replace(/-/g, '');
-            }
-
-            navigator.clipboard.writeText(textoACopiar).then(() => {
-                const original = boton.textContent;
-                boton.textContent = "¡Copiado!";
-                boton.className = 'bg-emerald-700 text-white py-1.5 px-2.5 rounded-md text-xs font-medium shadow-xs';
-                setTimeout(() => {
-                    boton.textContent = original;
-                    boton.className = original.includes('CUIT') 
-                        ? 'bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 text-xs font-medium transition-colors shadow-xs' 
-                        : 'mt-3 bg-amber-700 text-white py-1.5 px-2.5 rounded-md hover:bg-amber-800 text-xs font-medium self-start transition-colors shadow-xs';
-                }, 1500);
-            });
-        };
-
-        window.editarCliente = function(id) {
-            const cliente = clientes.find(c => c.id === id);
-            if (!cliente) return;
-
-            nombreInput.value = cliente.nombre;
-            cuitInput.value = cliente.cuit;
-            
-            if (cliente.condicion) {
-                const radio = document.querySelector(`input[name="condicion"][value="${cliente.condicion}"]`);
-                if (radio) radio.checked = true;
-            } else {
-                document.querySelectorAll('input[name="condicion"]').forEach(r => r.checked = false);
-            }
-
-            if (cliente.estado) {
-                const radioEstado = document.querySelector(`input[name="estado"][value="${cliente.estado}"]`);
-                if (radioEstado) radioEstado.checked = true;
-            } else {
-                const radioActivo = document.querySelector('input[name="estado"][value="Activo"]');
-                if (radioActivo) radioActivo.checked = true;
-            }
-
-            bancoInput.value = cliente.banco || '';
-            arcaInput.value = cliente.arca || '';
-            rentasInput.value = cliente.rentas || '';
-            idEditando = id;
-
-            seccionHonorariosForm.classList.add('hidden');
-
-            btnGuardar.textContent = "Actualizar Cliente";
-            btnCancelar.classList.remove('hidden');
-            
-            formContainer.classList.remove('hidden');
-            btnToggleForm.textContent = "✕ Cerrar Formulario";
-            btnToggleForm.className = "bg-slate-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-slate-800 transition-colors shadow-sm";
-            
-            nombreInput.focus();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        };
-
-        window.eliminarCliente = async function(id) {
-            if (confirm("¿Estás seguro de que deseas eliminar este cliente?")) {
-                try {
-                    await deleteDoc(doc(db, "clientes", id));
-                    mostrarToast("Cliente eliminado correctamente.");
-                } catch (error) {
-                    console.error("Error al eliminar: ", error);
-                    mostrarToast("No se pudo eliminar el registro.", "error");
-                }
-            }
-        };
-
-        window.limpiarFormulario = function() {
-            nombreInput.value = '';
-            cuitInput.value = '';
-            document.querySelectorAll('input[name="condicion"]').forEach(r => r.checked = false);
-            const radioActivo = document.querySelector('input[name="estado"][value="Activo"]');
-            if (radioActivo) radioActivo.checked = true;
-            bancoInput.value = '';
-            arcaInput.value = '';
-            rentasInput.value = '';
-            
-            fechaHonorarioNuevoInput.value = new Date().toISOString().split('T')[0];
-            montoHonorarioNuevoInput.value = '';
-            periodosFormNuevo = [];
-            renderizarPeriodos(periodosFormNuevo, containerPeriodosForm, 'form');
-            seccionHonorariosForm.classList.remove('hidden');
-
-            idEditando = null;
-            btnGuardar.textContent = "Guardar Cliente";
-            btnCancelar.classList.add('hidden');
-            formContainer.classList.add('hidden');
-            btnToggleForm.textContent = "+ Nuevo Cliente";
-            btnToggleForm.className = "bg-amber-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-amber-800 transition-colors shadow-sm";
-        };
-
-        // ==========================================
-        // FUNCIÓN DE IMPRESIÓN REVISADA Y CORREGIDA
-        // ==========================================
-        window.ejecutarImpresion = function() {
-            const radCond = document.querySelector('input[name="filtroImpresionCondicion"]:checked');
-            const radEst = document.querySelector('input[name="filtroImpresionEstado"]:checked');
-
-            const condicionFiltro = radCond ? radCond.value : 'Todos';
-            const estadoFiltro = radEst ? radEst.value : 'Todos';
-
-            // Filtrado riguroso
-            const filtrados = clientes.filter(c => {
-                const condCliente = c.condicion || '';
-                const estCliente = c.estado || 'Activo'; // Por defecto activo si está indefinido
-
-                let coincideCond = (condicionFiltro === 'Todos') || (condCliente === condicionFiltro);
-                let coincideEst = (estadoFiltro === 'Todos') || (estCliente === estadoFiltro);
-
-                return coincideCond && coincideEst;
-            });
-
-            if (filtrados.length === 0) {
-                mostrarToast("No hay clientes que coincidan con los filtros seleccionados.", "error");
-                return;
-            }
-
-            // Ordenar alfabéticamente
-            filtrados.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es', { sensitivity: 'base' }));
-
-            window.toggleModalImprimir();
-
-            let txtCondicion = condicionFiltro === 'R.I.' ? 'Responsables Inscriptos' : condicionFiltro;
-            let tituloFiltro = `Filtros aplicados - Condición: ${txtCondicion} | Estado: ${estadoFiltro}`;
-
-            let ventanaImpresion = window.open('', '_blank');
-            if (!ventanaImpresion) {
-                mostrarToast("Por favor habilita las ventanas emergentes en tu navegador.", "error");
-                return;
-            }
-
-            const htmlContenido = `
-                <!DOCTYPE html>
-                <html lang="es">
-                <head>
-                    <meta charset="UTF-8">
-                    <title>Reporte de Clientes - Estudio Contable</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; padding: 20px; color: #333; margin: 0; }
-                        .estudio { font-size: 11px; font-weight: bold; text-transform: uppercase; color: #92400e; margin-bottom: 5px; }
-                        h2 { text-align: center; color: #78350f; margin: 5px 0; font-size: 20px; }
-                        h4 { text-align: center; color: #666; margin: 0 0 20px 0; font-size: 12px; font-weight: normal; }
-                        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }
-                        th, td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; }
-                        th { background-color: #fef3c7; color: #78350f; font-weight: bold; text-transform: uppercase; font-size: 10px; }
-                        tr:nth-child(even) { background-color: #f8fafc; }
-                        .text-center { text-align: center; }
-                        .badge { padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; }
-                        .badge-activo { background-color: #d1fae5; color: #065f46; }
-                        .badge-inactivo { background-color: #ffe4e6; color: #9f1239; }
-                        @media print {
-                            body { padding: 0; }
-                            @page { margin: 1.5cm; }
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div class="estudio">Estudio Contable Laura B. Deiana</div>
-                    <h2>Listado de Clientes</h2>
-                    <h4>${tituloFiltro} (Total: ${filtrados.length})</h4>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th style="width: 30px;">#</th>
-                                <th>Nombre / Razón Social</th>
-                                <th>CUIT</th>
-                                <th>Condición</th>
-                                <th>Estado</th>
-                                <th>Banco</th>
-                                <th>ARCA</th>
-                                <th>Rentas</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${filtrados.map((c, i) => `
-                                <tr>
-                                    <td class="text-center">${i + 1}</td>
-                                    <td><strong>${c.nombre || ''}</strong></td>
-                                    <td>${c.cuit || ''}</td>
-                                    <td>${c.condicion || '-'}</td>
-                                    <td class="text-center">
-                                        <span class="badge ${c.estado === 'Inactivo' ? 'badge-inactivo' : 'badge-activo'}">
-                                            ${c.estado || 'Activo'}
-                                        </span>
-                                    </td>
-                                    <td>${c.banco || '-'}</td>
-                                    <td>${c.arca || '-'}</td>
-                                    <td>${c.rentas || '-'}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </body>
-                </html>
-            `;
-
-            ventanaImpresion.document.open();
-            ventanaImpresion.document.write(htmlContenido);
-            ventanaImpresion.document.close();
-
-            ventanaImpresion.onload = function() {
-                ventanaImpresion.focus();
-                ventanaImpresion.print();
-            };
-        };
-    </script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestión de Clientes - Estudio Contable</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  @keyframes pop{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+  @keyframes slidein{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
+  @keyframes ring{0%{box-shadow:0 0 0 0 rgba(245,158,11,.6)}70%{box-shadow:0 0 0 9px rgba(245,158,11,0)}100%{box-shadow:0 0 0 0 rgba(245,158,11,0)}}
+  body{background-image:radial-gradient(1100px 480px at 90% -8%,rgba(253,230,138,.45),transparent),radial-gradient(800px 400px at -5% 100%,rgba(251,191,36,.12),transparent)}
+  .view:not(.hidden){animation:rise .35s ease both}
+  .rise{animation:rise .55s cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(var(--i,0)*70ms)}
+  #modalVenc>div,#modalImprimir>div,#modalManual>div{animation:pop .22s ease both}
+  .toast{animation:slidein .3s ease both}
+  .next{animation:ring 2.2s infinite}
+  .card-hover{transition:transform .2s,box-shadow .2s}
+  .card-hover:hover{transform:translateY(-2px);box-shadow:0 12px 26px -14px rgba(120,53,15,.45)}
+  button{transition:transform .12s,background-color .15s,box-shadow .15s}
+  button:active{transform:scale(.96)}
+  .nav{border-left:3px solid transparent;transition:background-color .15s,padding .15s,border-color .15s}
+  .nav:hover{padding-left:1rem}
+  .nav.bg-amber-700{border-left-color:#fcd34d}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
 </head>
 <body class="bg-amber-50/30 text-slate-800 font-sans min-h-screen">
 
-    <!-- SECCIÓN DE LOGIN -->
-    <section id="loginSection" class="min-h-screen flex items-center justify-center p-4">
-        <div class="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border border-amber-200">
-            <div class="text-center mb-6">
-                <h1 class="text-2xl font-bold text-amber-900">Estudio Contable</h1>
-                <p class="text-sm text-slate-500 mt-1">Gestión de Clientes & Honorarios</p>
-            </div>
-            <form onsubmit="loginConClave(event)" class="space-y-4">
-                <div>
-                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Correo Autorizado</label>
-                    <input type="email" id="inputEmail" placeholder="correo@ejemplo.com" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700">
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Contraseña Maestro</label>
-                    <input type="password" id="inputPassword" placeholder="••••••••" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700">
-                </div>
-                <button type="submit" class="w-full bg-amber-800 text-white font-bold py-2.5 rounded-lg hover:bg-amber-900 transition-colors shadow-md text-sm mt-2">
-                    Iniciar Sesión
-                </button>
-            </form>
-        </div>
-    </section>
-
-    <!-- SECCIÓN PRINCIPAL (APLICACIÓN) -->
-    <section id="appSection" class="hidden min-h-screen pb-12">
-        <!-- Navegación -->
-        <header class="bg-amber-900 text-white shadow-md">
-            <div class="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
-                <div>
-                    <h1 class="font-bold text-lg leading-tight">Estudio Contable</h1>
-                    <span id="userEmail" class="text-xs text-amber-200 block"></span>
-                </div>
-                <button onclick="cerrarSesion()" class="bg-amber-800 hover:bg-amber-700 text-white text-xs px-3 py-1.5 rounded-lg transition-colors border border-amber-700">
-                    Cerrar Sesión
-                </button>
-            </div>
-        </header>
-
-        <main class="max-w-6xl mx-auto px-4 mt-6">
-            <!-- Barra superior de acciones -->
-            <div class="flex flex-wrap items-center justify-between gap-3 mb-6 bg-white p-4 rounded-xl shadow-xs border border-amber-200">
-                <input type="text" id="buscador" placeholder="Buscar por Nombre, CUIT, Banco, ARCA, Rentas..." class="flex-1 min-w-[200px] px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700">
-                <div class="flex gap-2">
-                    <button id="btnToggleForm" onclick="toggleFormulario()" class="bg-amber-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-amber-800 transition-colors shadow-sm">
-                        + Nuevo Cliente
-                    </button>
-                    <button onclick="toggleModalImprimir()" class="bg-slate-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-slate-800 transition-colors shadow-sm">
-                        🖨️ Imprimir Lista
-                    </button>
-                </div>
-            </div>
-
-            <!-- Contenedor del Formulario Cliente (Oculto por defecto) -->
-            <div id="formContainer" class="hidden mb-6 bg-white p-6 rounded-xl shadow-md border border-amber-200">
-                <h2 class="text-lg font-bold text-amber-900 mb-4 border-b pb-2">Datos del Cliente</h2>
-                <form id="clientForm" class="space-y-4">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Nombre / Razón Social *</label>
-                            <input type="text" id="nombre" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">CUIT *</label>
-                            <input type="text" id="cuit" placeholder="20-12345678-9" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700">
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Condición Fiscal</label>
-                            <div class="flex gap-4 items-center pt-2 text-sm">
-                                <label class="flex items-center gap-1 cursor-pointer">
-                                    <input type="radio" name="condicion" value="Monotributo" class="text-amber-800 focus:ring-amber-700"> Monotributo
-                                </label>
-                                <label class="flex items-center gap-1 cursor-pointer">
-                                    <input type="radio" name="condicion" value="R.I." class="text-amber-800 focus:ring-amber-700"> Responsable Inscripto
-                                </label>
-                                <label class="flex items-center gap-1 cursor-pointer">
-                                    <input type="radio" name="condicion" value="Exento" class="text-amber-800 focus:ring-amber-700"> Exento
-                                </label>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Estado</label>
-                            <div class="flex gap-4 items-center pt-2 text-sm">
-                                <label class="flex items-center gap-1 cursor-pointer">
-                                    <input type="radio" name="estado" value="Activo" checked class="text-amber-800 focus:ring-amber-700"> Activo
-                                </label>
-                                <label class="flex items-center gap-1 cursor-pointer">
-                                    <input type="radio" name="estado" value="Inactivo" class="text-amber-800 focus:ring-amber-700"> Inactivo
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">CBU / Banco</label>
-                            <input type="text" id="banco" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Clave ARCA</label>
-                            <input type="text" id="arca" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Clave Rentas</label>
-                            <input type="text" id="rentas" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700">
-                        </div>
-                    </div>
-
-                    <!-- SUBSECCIÓN: CARGAR HONORARIOS INICIALES -->
-                    <div id="seccionHonorariosForm" class="bg-emerald-50/60 p-4 rounded-xl border border-emerald-200 mt-4 space-y-3">
-                        <div class="flex justify-between items-center border-b border-emerald-200/80 pb-2">
-                            <h3 class="text-xs font-bold text-emerald-900 uppercase">Cargar Honorarios Iniciales (Opcional)</h3>
-                            <span class="text-[11px] text-emerald-700 font-medium italic">Puedes dejarlo en blanco si no aplica</span>
-                        </div>
-                        
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                                <label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Fecha de Pago</label>
-                                <input type="date" id="fechaHonorarioNuevo" class="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600 bg-white">
-                            </div>
-                            <div>
-                                <label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Monto ($)</label>
-                                <input type="number" step="0.01" id="montoHonorarioNuevo" placeholder="0.00" class="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600 bg-white">
-                            </div>
-                        </div>
-
-                        <div>
-                            <label for="input-periodo-form" class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Agregar Períodos</label>
-                            <div class="flex gap-2">
-                                <input type="text" id="input-periodo-form" placeholder="Ej: 01/2026, Enero 2026, etc." class="flex-1 px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600 bg-white">
-                                <button type="button" id="btn-agregar-periodo-form" class="bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-emerald-800 transition-colors">Agregar</button>
-                            </div>
-                            <div id="periodos-container-form" class="flex flex-wrap gap-1.5 min-h-[28px] mt-2"></div>
-                        </div>
-
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                            <fieldset class="border border-emerald-200 rounded-lg p-2.5 bg-white">
-                                <legend class="text-[11px] font-bold text-slate-700 px-1">Medio de Pago</legend>
-                                <div class="flex gap-3 text-xs">
-                                    <label class="flex items-center gap-1 cursor-pointer">
-                                        <input type="radio" name="medio_pago_form" value="Transferencia" checked class="text-emerald-800 focus:ring-emerald-700"> Transferencia
-                                    </label>
-                                    <label class="flex items-center gap-1 cursor-pointer">
-                                        <input type="radio" name="medio_pago_form" value="Efectivo" class="text-emerald-800 focus:ring-emerald-700"> Efectivo
-                                    </label>
-                                </div>
-                            </fieldset>
-
-                            <fieldset class="border border-emerald-200 rounded-lg p-2.5 bg-white">
-                                <legend class="text-[11px] font-bold text-slate-700 px-1">Tipo de Comprobante</legend>
-                                <div class="flex gap-3 text-xs">
-                                    <label class="flex items-center gap-1 cursor-pointer">
-                                        <input type="radio" name="tipo_comprobante_form" value="Factura" checked class="text-emerald-800 focus:ring-emerald-700"> Factura
-                                    </label>
-                                    <label class="flex items-center gap-1 cursor-pointer">
-                                        <input type="radio" name="tipo_comprobante_form" value="Recibo" class="text-emerald-800 focus:ring-emerald-700"> Recibo
-                                    </label>
-                                </div>
-                            </fieldset>
-                        </div>
-                    </div>
-
-                    <div class="flex justify-end gap-2 pt-2">
-                        <button type="button" id="btnCancelar" onclick="limpiarFormulario()" class="hidden bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-slate-300 transition-colors">
-                            Cancelar
-                        </button>
-                        <button type="submit" id="btnGuardar" class="bg-amber-800 text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-amber-900 transition-colors shadow-sm">
-                            Guardar Cliente
-                        </button>
-                    </div>
-                </form>
-            </div>
-
-            <!-- Listado de Clientes -->
-            <div id="contenedorClientes" class="space-y-3">
-                <div class="py-8 text-center text-slate-400">Cargando datos...</div>
-            </div>
-        </main>
-    </section>
-
-    <!-- MODAL IMPRIMIR LISTADO CON VALORES DE FILTRO CORREGIDOS -->
-    <div id="modalImprimir" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-amber-200">
-            <h3 class="text-lg font-bold text-amber-900 mb-4">Imprimir / Exportar Reporte</h3>
-            
-            <div class="space-y-4 text-sm">
-                <div>
-                    <label class="block text-xs font-bold text-slate-700 uppercase mb-2">Filtrar por Condición</label>
-                    <div class="flex flex-wrap gap-3">
-                        <label class="cursor-pointer flex items-center gap-1">
-                            <input type="radio" name="filtroImpresionCondicion" value="Todos" checked class="text-amber-800 focus:ring-amber-700"> Todos
-                        </label>
-                        <label class="cursor-pointer flex items-center gap-1">
-                            <input type="radio" name="filtroImpresionCondicion" value="Monotributo" class="text-amber-800 focus:ring-amber-700"> Monotributo
-                        </label>
-                        <label class="cursor-pointer flex items-center gap-1">
-                            <input type="radio" name="filtroImpresionCondicion" value="R.I." class="text-amber-800 focus:ring-amber-700"> Resp. Inscripto
-                        </label>
-                        <label class="cursor-pointer flex items-center gap-1">
-                            <input type="radio" name="filtroImpresionCondicion" value="Exento" class="text-amber-800 focus:ring-amber-700"> Exento
-                        </label>
-                    </div>
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold text-slate-700 uppercase mb-2">Filtrar por Estado</label>
-                    <div class="flex flex-wrap gap-3">
-                        <label class="cursor-pointer flex items-center gap-1">
-                            <input type="radio" name="filtroImpresionEstado" value="Todos" checked class="text-amber-800 focus:ring-amber-700"> Todos
-                        </label>
-                        <label class="cursor-pointer flex items-center gap-1">
-                            <input type="radio" name="filtroImpresionEstado" value="Activo" class="text-amber-800 focus:ring-amber-700"> Activo
-                        </label>
-                        <label class="cursor-pointer flex items-center gap-1">
-                            <input type="radio" name="filtroImpresionEstado" value="Inactivo" class="text-amber-800 focus:ring-amber-700"> Inactivo
-                        </label>
-                    </div>
-                </div>
-            </div>
-
-            <div class="flex justify-end gap-2 mt-6">
-                <button onclick="toggleModalImprimir()" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-slate-300">
-                    Cancelar
-                </button>
-                <button onclick="ejecutarImpresion()" class="bg-amber-800 text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-amber-900 shadow-xs">
-                    Generar Reporte
-                </button>
-            </div>
-        </div>
+<!-- LOGIN -->
+<section id="loginSection" class="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-amber-100 via-amber-50 to-white">
+  <div class="rise bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border border-amber-200">
+    <div class="text-center mb-6">
+      <h1 class="text-2xl font-bold text-amber-900">Estudio Contable</h1>
+      <p class="text-sm text-slate-500 mt-1">Gestión de Clientes & Honorarios</p>
     </div>
+    <form id="loginForm" class="space-y-4">
+      <div><label class="block text-xs font-bold text-slate-700 uppercase mb-1">Correo Autorizado</label>
+        <input type="email" id="inputEmail" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700"></div>
+      <div><label class="block text-xs font-bold text-slate-700 uppercase mb-1">Contraseña Maestro</label>
+        <input type="password" id="inputPassword" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700"></div>
+      <button type="submit" class="w-full bg-amber-800 text-white font-bold py-2.5 rounded-lg hover:bg-amber-900 text-sm mt-2">Iniciar Sesión</button>
+    </form>
+  </div>
+</section>
 
-    <!-- MODAL REGISTRO Y HISTORIAL DE HONORARIOS -->
-    <div id="modalHonorarios" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-amber-200 max-h-[90vh] flex flex-col">
-            <div class="flex justify-between items-center border-b pb-3 mb-4">
-                <div>
-                    <h3 class="text-lg font-bold text-amber-900">Gestión de Honorarios</h3>
-                    <p id="nombreClienteHonorarios" class="text-xs font-semibold text-slate-600"></p>
-                </div>
-                <button onclick="cerrarModalHonorarios()" class="text-slate-400 hover:text-slate-600 font-bold text-lg">✕</button>
-            </div>
-
-            <!-- Formulario de Carga Dinámica Modal -->
-            <form id="formHonorarios" class="space-y-3 bg-amber-50/50 p-4 rounded-xl border border-amber-100 mb-4">
-                <h4 class="text-xs font-bold text-amber-900 uppercase">Registrar Nuevo Pago</h4>
-                
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Fecha de Pago</label>
-                        <input type="date" id="honorariosFecha" required class="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-700">
-                    </div>
-                    <div>
-                        <label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Monto ($)</label>
-                        <input type="number" step="0.01" id="honorariosMonto" placeholder="0.00" required class="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-700">
-                    </div>
-                </div>
-
-                <div>
-                    <label for="input-periodo" class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Agregar Períodos</label>
-                    <div class="flex gap-2">
-                        <input type="text" id="input-periodo" placeholder="Ej: 01/2026, Enero 2026, etc." class="flex-1 px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-700">
-                        <button type="button" id="btn-agregar-periodo" class="bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-emerald-800 transition-colors">Agregar</button>
-                    </div>
-                    <div id="periodos-container" class="flex flex-wrap gap-1.5 min-h-[28px] mt-2"></div>
-                </div>
-
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                    <fieldset class="border border-slate-200 rounded-lg p-2.5 bg-white">
-                        <legend class="text-[11px] font-bold text-slate-700 px-1">Medio de Pago</legend>
-                        <div class="flex gap-3 text-xs">
-                            <label class="flex items-center gap-1 cursor-pointer">
-                                <input type="radio" id="pago_transferencia" name="medio_pago" value="Transferencia" checked class="text-amber-800 focus:ring-amber-700"> Transferencia
-                            </label>
-                            <label class="flex items-center gap-1 cursor-pointer">
-                                <input type="radio" id="pago_efectivo" name="medio_pago" value="Efectivo" class="text-amber-800 focus:ring-amber-700"> Efectivo
-                            </label>
-                        </div>
-                    </fieldset>
-
-                    <fieldset class="border border-slate-200 rounded-lg p-2.5 bg-white">
-                        <legend class="text-[11px] font-bold text-slate-700 px-1">Tipo de Comprobante</legend>
-                        <div class="flex gap-3 text-xs">
-                            <label class="flex items-center gap-1 cursor-pointer">
-                                <input type="radio" id="comp_factura" name="tipo_comprobante" value="Factura" checked class="text-amber-800 focus:ring-amber-700"> Factura
-                            </label>
-                            <label class="flex items-center gap-1 cursor-pointer">
-                                <input type="radio" id="comp_recibo" name="tipo_comprobante" value="Recibo" class="text-amber-800 focus:ring-amber-700"> Recibo
-                            </label>
-                        </div>
-                    </fieldset>
-                </div>
-
-                <div class="flex justify-end pt-1">
-                    <button type="submit" class="bg-amber-800 text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-amber-900 transition-colors shadow-xs">
-                        Guardar Pago Honorario
-                    </button>
-                </div>
-            </form>
-
-            <!-- Historial -->
-            <div class="flex-1 overflow-y-auto pr-1">
-                <h4 class="text-xs font-bold text-slate-700 uppercase mb-2">Historial de Pagos</h4>
-                <div id="listaHistorialHonorarios" class="space-y-2">
-                    <!-- Dinámico -->
-                </div>
-            </div>
-
-            <div class="flex justify-end mt-4 pt-3 border-t">
-                <button onclick="cerrarModalHonorarios()" class="bg-slate-200 text-slate-700 px-4 py-1.5 rounded-lg text-xs font-semibold hover:bg-slate-300">
-                    Cerrar
-                </button>
-            </div>
-        </div>
+<!-- APP -->
+<div id="appSection" class="hidden">
+  <aside id="side" class="fixed top-0 left-0 h-full w-60 bg-amber-950 text-amber-50 z-40 transition-transform duration-200 flex flex-col shadow-xl">
+    <div class="px-4 py-4 border-b border-amber-900">
+      <div class="font-bold text-lg leading-tight">Estudio Contable</div>
+      <div id="userEmail" class="text-xs text-amber-300 break-all mt-0.5"></div>
     </div>
+    <nav id="nav" class="flex-1 p-2 space-y-1">
+      <button data-v="inicio" class="nav w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-amber-800">🏠 Inicio / Vencimientos</button>
+      <button data-v="clientes" class="nav w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-amber-800">🔍 Buscar cliente</button>
+      <button data-v="honorarios" class="nav w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-amber-800">💰 Cargar honorarios</button>
+      <button data-v="estados" class="nav w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-amber-800">📋 Estado de trabajos</button>
+    </nav>
+    <button id="btnLogout" class="m-2 px-3 py-2 rounded-lg text-sm bg-amber-900 hover:bg-amber-800 text-left">⎋ Cerrar sesión</button>
+  </aside>
+  <div class="fixed bottom-4 right-4 z-30 flex flex-col items-end gap-2">
+    <div id="jPanel" class="hidden w-80 max-w-[90vw] bg-slate-950 text-cyan-100 rounded-2xl border border-cyan-500/50 shadow-2xl p-3 text-sm">
+      <div class="flex justify-between items-center mb-2"><span class="font-bold tracking-widest text-cyan-300 text-xs">Aleja</span><button id="jStop" class="text-xs text-cyan-400 hover:text-cyan-200">Silenciar</button></div>
+      <div id="jLog" class="h-44 overflow-y-auto space-y-1 text-xs"></div>
+      <div class="flex gap-1 mt-2"><input id="jIn" placeholder="Escribí o usá el micrófono" class="flex-1 bg-slate-900 border border-cyan-700 rounded px-2 py-1 text-xs text-cyan-100"><button id="jMic" class="bg-cyan-600 hover:bg-cyan-500 text-white rounded px-2">🎙️</button></div>
+    </div>
+    <button id="jOrb" class="w-14 h-14 rounded-full bg-slate-950 border-2 border-cyan-400 shadow-[0_0_18px_#22d3ee] text-cyan-300 font-bold text-[10px] leading-tight hover:scale-105 transition-transform">Aleja</button>
+  </div>
+  <div id="backdrop" class="hidden fixed inset-0 bg-black/40 z-30 lg:hidden"></div>
 
+  <div id="main" class="transition-[margin] duration-200 lg:ml-60 min-h-screen pb-12">
+    <header class="bg-gradient-to-r from-amber-950 via-amber-900 to-amber-800 text-white shadow-md sticky top-0 z-20">
+      <div class="px-4 py-3 flex items-center gap-3">
+        <button id="btnMenu" class="text-xl leading-none px-2 py-1 rounded hover:bg-amber-800" aria-label="Menú">☰</button>
+        <h1 id="titulo" class="font-bold text-base"></h1>
+      </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-4 mt-6">
+
+      <!-- INICIO -->
+      <section id="v-inicio" class="view hidden space-y-6">
+        <div id="hero" class="rise relative overflow-hidden rounded-2xl bg-gradient-to-br from-amber-900 via-amber-800 to-amber-600 text-white p-6 shadow-lg">
+          <div class="absolute -right-10 -top-12 w-56 h-56 rounded-full bg-amber-300/25 blur-2xl"></div>
+          <button id="btnManual" class="absolute right-4 top-4 bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg text-xs font-semibold">＋ Cargar vencimiento</button>
+          <p id="heroSaludo" class="text-amber-200 text-sm"></p>
+          <h2 id="heroFecha" class="text-2xl sm:text-3xl font-bold capitalize"></h2>
+          <div class="flex gap-10 mt-5">
+            <div><div id="heroSemana" class="text-4xl font-extrabold leading-none">0</div><div class="text-xs text-amber-200 mt-1">vencen en 7 días</div></div>
+            <div><div id="heroPend" class="text-4xl font-extrabold leading-none">0</div><div class="text-xs text-amber-200 mt-1">trabajos pendientes del mes</div></div>
+          </div>
+        </div>
+        <div id="proximos"></div>
+        <div id="vencimientos" class="space-y-8"></div>
+        <p class="text-[11px] text-slate-500">Tocá cualquier fecha para ver los clientes de ese grupo. Fechas calculadas por terminación de CUIT con días hábiles consecutivos. Confirmalas con el calendario oficial de ARCA; los días base y los feriados se ajustan al inicio del script (BASE y FERIADOS). Convenio Multilateral y Ganancias (sociedades) usan tablas fijas de 2026; Ingresos Brutos usa Jujuy, día 20.</p>
+      </section>
+
+      <!-- CLIENTES -->
+      <section id="v-clientes" class="view hidden">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-6 bg-white p-4 rounded-xl border border-amber-200">
+          <input type="text" id="buscador" placeholder="Buscar por Nombre, CUIT, Banco, ARCA, Rentas..." class="flex-1 min-w-[200px] px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700">
+          <div class="flex gap-2">
+            <button id="btnToggleForm" class="bg-amber-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-amber-800">+ Nuevo Cliente</button>
+            <button id="btnImprimir" class="bg-slate-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-slate-800">🖨️ Imprimir Lista</button>
+          </div>
+        </div>
+
+        <div id="formContainer" class="hidden mb-6 bg-white p-6 rounded-xl shadow-md border border-amber-200">
+          <h2 class="text-lg font-bold text-amber-900 mb-4 border-b pb-2">Datos del Cliente</h2>
+          <form id="clientForm" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div><label class="block text-xs font-bold text-slate-700 uppercase mb-1">Nombre / Razón Social *</label>
+                <input type="text" id="nombre" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700"></div>
+              <div><label class="block text-xs font-bold text-slate-700 uppercase mb-1">CUIT *</label>
+                <input type="text" id="cuit" placeholder="20-12345678-9" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700"></div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div><label class="block text-xs font-bold text-slate-700 uppercase mb-1">Condición Fiscal</label>
+                <div class="flex gap-4 pt-2 flex-wrap">
+                  <label class="flex items-center gap-1"><input type="radio" name="condicion" value="Monotributo"> Monotributo</label>
+                  <label class="flex items-center gap-1"><input type="radio" name="condicion" value="R.I."> Responsable Inscripto</label>
+                  <label class="flex items-center gap-1"><input type="radio" name="condicion" value="Exento"> Exento</label>
+                </div></div>
+              <div><label class="block text-xs font-bold text-slate-700 uppercase mb-1">Estado</label>
+                <div class="flex gap-4 pt-2">
+                  <label class="flex items-center gap-1"><input type="radio" name="estado" value="Activo" checked> Activo</label>
+                  <label class="flex items-center gap-1"><input type="radio" name="estado" value="Inactivo"> Inactivo</label>
+                </div></div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div><label class="block text-xs font-bold text-slate-700 uppercase mb-1">CBU / Banco</label>
+                <input type="text" id="banco" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700"></div>
+              <div><label class="block text-xs font-bold text-slate-700 uppercase mb-1">Clave ARCA</label>
+                <input type="text" id="arca" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700"></div>
+              <div><label class="block text-xs font-bold text-slate-700 uppercase mb-1">Clave Rentas</label>
+                <input type="text" id="rentas" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700"></div>
+            </div>
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <label class="block text-xs font-bold text-slate-700 uppercase">Obligaciones y responsables</label>
+                <button type="button" id="oblTodas" class="text-xs text-amber-800 font-semibold underline">Marcar todas</button>
+              </div>
+              <p class="text-[11px] text-slate-500 mb-1">Tildá cada obligación y elegí quién (o quiénes) la trabajan.</p>
+              <div id="obligBox" class="rounded-lg border border-amber-200 bg-amber-50/40 px-3"></div>
+            </div>
+            <div class="flex justify-end gap-2 pt-2">
+              <button type="button" id="btnCancelar" class="hidden bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-slate-300">Cancelar</button>
+              <button type="submit" id="btnGuardar" class="bg-amber-800 text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-amber-900">Guardar Cliente</button>
+            </div>
+          </form>
+        </div>
+
+        <div id="contenedorClientes" class="space-y-3"><div class="py-8 text-center text-slate-400">Cargando datos...</div></div>
+      </section>
+
+      <!-- HONORARIOS -->
+      <section id="v-honorarios" class="view hidden max-w-2xl">
+        <div class="bg-white p-5 rounded-xl border border-amber-200 shadow-sm space-y-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Cliente</label>
+            <input list="dlClientes" id="honCliente" placeholder="Escribí nombre o CUIT y elegí de la lista" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-700">
+            <datalist id="dlClientes"></datalist>
+            <p id="honAviso" class="text-xs text-slate-500 mt-1"></p>
+          </div>
+          <form id="formHonorarios" class="hidden space-y-3 bg-amber-50/50 p-4 rounded-xl border border-amber-100">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div><label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Fecha de Pago</label>
+                <input type="date" id="honFecha" required class="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs"></div>
+              <div><label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Monto ($)</label>
+                <input type="number" step="0.01" id="honMonto" placeholder="0.00" required class="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs"></div>
+            </div>
+            <div><label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Agregar Períodos</label>
+              <div class="flex gap-2">
+                <input type="text" id="inPeriodo" placeholder="Ej: 01/2026, Enero 2026" class="flex-1 px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs">
+                <button type="button" id="btnPeriodo" class="bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-emerald-800">Agregar</button>
+              </div>
+              <div id="chips" class="flex flex-wrap gap-1.5 min-h-[28px] mt-2"></div></div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <fieldset class="border border-slate-200 rounded-lg p-2.5 bg-white"><legend class="text-[11px] font-bold px-1">Medio de Pago</legend>
+                <label class="mr-3"><input type="radio" name="medio" value="Transferencia" checked> Transferencia</label>
+                <label><input type="radio" name="medio" value="Efectivo"> Efectivo</label></fieldset>
+              <fieldset class="border border-slate-200 rounded-lg p-2.5 bg-white"><legend class="text-[11px] font-bold px-1">Comprobante</legend>
+                <label class="mr-3"><input type="radio" name="comp" value="Factura" checked> Factura</label>
+                <label><input type="radio" name="comp" value="Recibo"> Recibo</label></fieldset>
+            </div>
+            <div class="flex justify-end"><button type="submit" class="bg-amber-800 text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-amber-900">Guardar Pago Honorario</button></div>
+          </form>
+          <div id="histWrap" class="hidden">
+            <h4 class="text-xs font-bold text-slate-700 uppercase mb-2">Historial de Pagos</h4>
+            <div id="historial" class="space-y-2"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ESTADO DE TRABAJOS -->
+      <section id="v-estados" class="view hidden">
+        <div class="flex flex-wrap items-center gap-3 mb-4 bg-white p-4 rounded-xl border border-amber-200 text-sm">
+          <label class="font-bold text-xs uppercase text-slate-700">Mes de vencimiento</label>
+          <input type="month" id="estMes" class="px-2 py-1.5 border border-slate-300 rounded-lg text-sm">
+          <label class="flex items-center gap-1"><input type="checkbox" id="estPend"> Solo pendientes</label>
+          <span id="estResumen" class="ml-auto text-xs font-semibold text-slate-600"></span>
+        </div>
+        <div id="estEquipo" class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4"></div>
+        <div class="h-3 bg-amber-100 rounded-full overflow-hidden mb-3"><div id="estBar" class="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-700" style="width:0"></div></div>
+        <div id="estMsg"></div>
+        <div class="bg-white rounded-xl border border-amber-200 overflow-x-auto"><table id="estTabla" class="w-full text-xs"></table></div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- MODAL CARGAR VENCIMIENTO -->
+<div id="modalManual" class="hidden fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-[60]">
+  <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-amber-200">
+    <h3 id="manTitulo" class="font-bold text-amber-900 mb-3">Cargar vencimiento</h3>
+    <form id="formManual" class="space-y-3 text-sm">
+      <div><label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Obligación</label>
+        <select id="manTax" class="w-full px-3 py-2 border border-slate-300 rounded-lg"></select></div>
+      <div id="manNombreWrap" class="hidden"><label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Nombre</label>
+        <input id="manNombre" class="w-full px-3 py-2 border border-slate-300 rounded-lg" placeholder="Ej: Balance, Habilitación..."></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Terminaciones</label>
+          <input list="dlTerms" id="manTerms" value="Todas" class="w-full px-3 py-2 border border-slate-300 rounded-lg">
+          <datalist id="dlTerms"><option value="Todas"><option value="0-1"><option value="0-2"><option value="0-3"><option value="2-3"><option value="3-5"><option value="4-5"><option value="4-6"><option value="6-7"><option value="7-9"><option value="8-9"></datalist></div>
+        <div><label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Fecha</label>
+          <input type="date" id="manFecha" required class="w-full px-3 py-2 border border-slate-300 rounded-lg"></div>
+      </div>
+      <div><label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Nota (opcional)</label>
+        <input id="manNota" class="w-full px-3 py-2 border border-slate-300 rounded-lg"></div>
+      <div class="flex justify-end gap-2 pt-1">
+        <button type="button" id="manCancel" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-xs font-semibold">Cancelar</button>
+        <button type="submit" class="bg-amber-800 text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-amber-900">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL VENCIMIENTO -->
+<div id="modalVenc" class="hidden fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50">
+  <div class="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-amber-200 max-h-[85vh] flex flex-col">
+    <div class="flex justify-between items-start border-b pb-3 mb-3">
+      <div><h3 id="vencTitulo" class="font-bold text-amber-900"></h3><p id="vencSub" class="text-xs text-slate-500"></p></div>
+      <button id="vencCerrar" class="text-slate-400 hover:text-slate-600 font-bold text-lg">✕</button>
+    </div>
+    <div id="vencLista" class="overflow-y-auto space-y-2"></div>
+    <div id="vencPie" class="flex flex-wrap gap-2 justify-end border-t pt-3 mt-3"></div>
+  </div>
+</div>
+
+<!-- MODAL IMPRIMIR -->
+<div id="modalImprimir" class="hidden fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50">
+  <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-amber-200 text-sm">
+    <h3 class="text-lg font-bold text-amber-900 mb-4">Imprimir / Exportar Reporte</h3>
+    <label class="block text-xs font-bold text-slate-700 uppercase mb-2">Filtrar por Condición</label>
+    <div class="flex flex-wrap gap-3 mb-4">
+      <label><input type="radio" name="fCond" value="Todos" checked> Todos</label>
+      <label><input type="radio" name="fCond" value="Monotributo"> Monotributo</label>
+      <label><input type="radio" name="fCond" value="R.I."> Resp. Inscripto</label>
+      <label><input type="radio" name="fCond" value="Exento"> Exento</label>
+    </div>
+    <label class="block text-xs font-bold text-slate-700 uppercase mb-2">Filtrar por Estado</label>
+    <div class="flex flex-wrap gap-3">
+      <label><input type="radio" name="fEst" value="Todos" checked> Todos</label>
+      <label><input type="radio" name="fEst" value="Activo"> Activo</label>
+      <label><input type="radio" name="fEst" value="Inactivo"> Inactivo</label>
+    </div>
+    <div class="flex justify-end gap-2 mt-6">
+      <button id="btnImpCancelar" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-xs font-semibold">Cancelar</button>
+      <button id="btnImpOk" class="bg-amber-800 text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-amber-900">Generar Reporte</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
+import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, arrayUnion, deleteField } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
+const db = getFirestore(initializeApp({
+  apiKey: "AIzaSyBMr9S5Hx8KhZto1K-TM1tqdpoShb8Cd5I",
+  authDomain: "clientes-25157.firebaseapp.com",
+  projectId: "clientes-25157",
+  storageBucket: "clientes-25157.firebasestorage.app",
+  messagingSenderId: "964761913555",
+  appId: "1:964761913555:web:f4591e75b00bd68f956c26"
+}));
+
+const CORREOS_AUTORIZADOS = ["jesusangelcabrera255@gmail.com", "laurabdeiana@gmail.com"];
+const CLAVE_MESTRA = "Estudio2026*";
+
+// ===== AJUSTES DE VENCIMIENTOS =====
+// Día del mes desde el que se cuentan los vencimientos (se corre al siguiente día hábil)
+const BASE = { mono: 20, iva: 18, aut: 5, f931: 10, plan: 16, iibb: 20 };
+// Tablas fijas 2026 (índice = mes 0-11, valores = días del mes). Convenio Multilateral: terminaciones 0-2, 3-5, 6-7, 8-9 (noviembre ya con la prórroga).
+const CM26 = [[15,16,19,20],[13,18,19,20],[13,16,17,18],[15,16,17,20],[15,18,19,20],[16,17,18,19],[15,16,17,20],[14,18,19,20],[15,16,17,18],[15,16,19,20],[17,18,19,20],[15,16,17,18]];
+// Ganancias sociedades (DDJJ anual, 5 meses después del cierre): terminaciones 0-3, 4-6, 7-9
+const GAN26 = [[13,14,15],[13,16,17],[13,16,17],[13,14,15],[13,14,15],[15,16,17],[13,14,15],[13,14,17],[14,15,16],[13,14,15],[13,16,17],[14,15,16]];
+const fijas = (y, m, tabla) => (y === 2026 && tabla[m]) ? tabla[m].map(d => new Date(y, m, d)) : [];
+// Personas humanas: junio (estimado: 3 días hábiles desde el 11)
+const ganFechas = (y, m) => y === 2026 ? fijas(y, m, GAN26) : m === 5 ? secuencia(y, m, 11, 3) : [];
+// Feriados (AAAA-MM-DD). Completar según el calendario oficial.
+const FERIADOS = ['2026-11-23', '2026-12-08', '2026-12-25', '2027-01-01'];
+
+const OBLIG = { mono: 'Monotributo', iva: 'IVA', aut: 'Seguridad Social · Autónomos', f931: 'Seguridad Social · Empleadores (F.931)', plan: 'Facilidades de Pago', gan: 'Ganancias', iibb: 'Ingresos Brutos', cm: 'Convenio Multilateral' };
+const SHORT = { mono: 'Monotributo', iva: 'IVA', aut: 'SS Autónomos', f931: 'SS Empleadores', plan: 'Facilidades', gan: 'Ganancias', iibb: 'Ing. Brutos', cm: 'Conv. Multilateral' };
+const TAXKEY = Object.fromEntries(Object.entries(OBLIG).map(([k, v]) => [v, k]));
+const EQUIPO = ['Alba', 'Alejandra', 'Jesus', 'Conti'];
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad = n => String(n).padStart(2, '0');
+const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;   // fecha local (no UTC)
+const ahora = () => { const d = new Date(); return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const money = n => '$' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2 });
+const ordenar = a => a.sort((x, y) => (x.nombre || '').localeCompare(y.nombre || '', 'es', { sensitivity: 'base' }));
+
+let manuales = [], unsubMan = null, clientes = [], idEditando = null, idHon = null, periodos = [], unsub = null;
+
+function toast(msg, tipo = 'ok') {
+  const t = document.createElement('div');
+  t.className = `fixed bottom-5 right-5 ${tipo === 'ok' ? 'bg-emerald-800' : 'bg-rose-800'} text-white px-4 py-3 rounded-xl shadow-lg z-50 text-sm max-w-sm toast`;
+  t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 4000);
+}
+
+// ===== SESIÓN =====
+function entrar(email) {
+  $('loginSection').classList.add('hidden'); $('appSection').classList.remove('hidden');
+  $('userEmail').textContent = email; sessionStorage.setItem('usuarioEstudio', email);
+  if (window.innerWidth < 1024) cerrarMenu();
+  suscribir(); suscribirManuales(); ir('inicio');
+}
+$('loginForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const mail = $('inputEmail').value.toLowerCase().trim();
+  if (!CORREOS_AUTORIZADOS.map(c => c.toLowerCase()).includes(mail)) return toast(`El correo ${mail} no está autorizado.`, 'error');
+  if ($('inputPassword').value !== CLAVE_MESTRA) return toast('Contraseña incorrecta.', 'error');
+  entrar(mail);
+});
+$('btnLogout').addEventListener('click', () => {
+  sessionStorage.removeItem('usuarioEstudio'); if (unsub) unsub(); unsub = null; clientes = []; if (unsubMan) unsubMan(); unsubMan = null; manuales = [];
+  $('contenedorClientes').innerHTML = ''; $('inputPassword').value = '';
+  $('appSection').classList.add('hidden'); $('loginSection').classList.remove('hidden');
+});
+const guardado = sessionStorage.getItem('usuarioEstudio');
+if (guardado && CORREOS_AUTORIZADOS.includes(guardado)) entrar(guardado);
+
+// ===== MENÚ LATERAL =====
+const TITULOS = { inicio: 'Inicio · Vencimientos', clientes: 'Buscar cliente', honorarios: 'Cargar honorarios', estados: 'Estado de trabajos' };
+let menuAbierto = window.innerWidth >= 1024;
+function aplicarMenu() {
+  $('side').classList.toggle('-translate-x-full', !menuAbierto);
+  $('main').classList.toggle('lg:ml-60', menuAbierto);
+  $('backdrop').classList.toggle('hidden', !(menuAbierto && window.innerWidth < 1024));
+}
+function cerrarMenu() { menuAbierto = false; aplicarMenu(); }
+$('btnMenu').addEventListener('click', () => { menuAbierto = !menuAbierto; aplicarMenu(); });
+$('backdrop').addEventListener('click', cerrarMenu);
+$('nav').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b) ir(b.dataset.v); });
+
+function ir(v) {
+  document.querySelectorAll('.view').forEach(s => s.classList.add('hidden'));
+  $('v-' + v).classList.remove('hidden'); $('titulo').textContent = TITULOS[v];
+  document.querySelectorAll('.nav').forEach(b => b.classList.toggle('bg-amber-700', b.dataset.v === v));
+  if (v === 'inicio') renderInicio();
+  if (v === 'estados') renderEstados(true);
+  if (v === 'honorarios') { llenarLista(); $('honCliente').focus(); }
+  if (window.innerWidth < 1024) cerrarMenu(); else aplicarMenu();
+}
+aplicarMenu();
+
+// ===== VENCIMIENTOS =====
+const habil = d => d.getDay() % 6 !== 0 && !FERIADOS.includes(ymd(d));
+function secuencia(y, m, dia, n) {            // n fechas en días hábiles consecutivos desde "dia"
+  const d = new Date(y, m, dia), out = [];
+  while (!habil(d)) d.setDate(d.getDate() + 1);
+  for (let i = 0; i < n; i++) { out.push(new Date(d)); do d.setDate(d.getDate() + 1); while (!habil(d)); }
+  return out;
+}
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+function vencMes(y, m) {
+  const ev = [], add = (tax, grupos, fechas) => fechas.length && grupos.forEach((t, i) => ev.push({ tax, terms: t, date: fechas[i] || fechas[0] }));
+  add('Monotributo', ['Todas'], secuencia(y, m, BASE.mono, 1));
+  add('IVA', ['0-1','2-3','4-5','6-7','8-9'], secuencia(y, m, BASE.iva, 5));
+  add('Seguridad Social · Autónomos', ['0-3','4-6','7-9'], secuencia(y, m, BASE.aut, 3));
+  add('Seguridad Social · Empleadores (F.931)', ['0-3','4-6','7-9'], secuencia(y, m, BASE.f931, 3));
+  add('Facilidades de Pago', ['Todas'], secuencia(y, m, BASE.plan, 1));
+  add('Ganancias', ['0-3','4-6','7-9'], ganFechas(y, m));
+  add('Ingresos Brutos', ['Todas'], secuencia(y, m, BASE.iibb, 1));
+  add('Convenio Multilateral', ['0-2','3-5','6-7','8-9'], fijas(y, m, CM26));
+  const out = ev.map(e => ({ ...e, key: ymd(e.date) + e.tax + e.terms, k: TAXKEY[e.tax] })), ref = new Date(y, m, 1);
+  manuales.forEach(v => {                                  // las fechas cargadas a mano reemplazan a las calculadas
+    const d = new Date(v.fecha + 'T00:00:00'); if (d.getFullYear() !== ref.getFullYear() || d.getMonth() !== ref.getMonth()) return;
+    const nombre = v.k === 'otro' ? v.nombre : OBLIG[v.k], i = out.findIndex(e => e.tax === nombre && e.terms === v.terms);
+    const e = { tax: nombre, terms: v.terms, date: d, k: v.k, key: v.id, manual: v.id, nota: v.nota || '' };
+    if (i >= 0) out[i] = e; else out.push(e);
+  });
+  return out;
+}
+function contar(el, n) {
+  const a = +el.textContent || 0, t0 = performance.now();
+  (function paso(t) { const q = Math.min((t - t0) / 700, 1); el.textContent = Math.round(a + (n - a) * (1 - Math.pow(1 - q, 3))); if (q < 1) requestAnimationFrame(paso); })(t0);
+}
+function renderHero() {
+  const h = new Date(), hoy = ymd(h), lim = new Date(h.getFullYear(), h.getMonth(), h.getDate() + 7);
+  const n = [0, 1].flatMap(i => vencMes(h.getFullYear(), h.getMonth() + i)).filter(e => ymd(e.date) >= hoy && e.date <= lim).length;
+  $('heroSaludo').textContent = h.getHours() < 12 ? 'Buen día' : h.getHours() < 20 ? 'Buenas tardes' : 'Buenas noches';
+  $('heroFecha').textContent = h.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+  contar($('heroSemana'), n); contar($('heroPend'), pendientesMes(mkey(h.getFullYear(), h.getMonth())).length);
+}
+function renderInicio() {
+  renderHero();
+  const h = new Date(), hoy = ymd(h), meses = [0, 1].map(k => new Date(h.getFullYear(), h.getMonth() + k, 1));
+  const porMes = meses.map(d => ({ d, ev: vencMes(d.getFullYear(), d.getMonth()) }));
+  const todos = porMes.flatMap(x => x.ev);
+  const prox = {};                                   // próximo vencimiento de cada impuesto
+  todos.filter(e => ymd(e.date) >= hoy).sort((a, b) => a.date - b.date).forEach(e => { if (!prox[e.tax]) prox[e.tax] = ymd(e.date); });
+  const fmt = d => d.toLocaleDateString('es-AR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+
+  const limite = new Date(h.getFullYear(), h.getMonth(), h.getDate() + 7);
+  const cercanos = todos.filter(e => ymd(e.date) >= hoy && e.date <= limite).sort((a, b) => a.date - b.date);
+  $('proximos').innerHTML = `<div class="bg-amber-100 border border-amber-300 rounded-xl p-4">
+    <h2 class="font-bold text-amber-900 text-sm mb-2">Próximos 7 días · hoy es ${fmt(h)}</h2>` +
+    (cercanos.length ? `<ul class="text-sm space-y-1">${cercanos.map(e => `<li><span class="font-semibold">${esc(fmt(e.date))}</span> — ${esc(e.tax)} <span class="text-slate-600">(term. ${esc(e.terms)})</span></li>`).join('')}</ul>`
+      : '<p class="text-sm text-slate-600">No hay vencimientos en los próximos 7 días.</p>') + '</div>';
+
+  $('vencimientos').innerHTML = porMes.map(({ d, ev }) => {
+    const taxes = [...new Set(ev.map(e => e.tax))];
+    return `<div><h2 class="text-lg font-bold text-amber-900 mb-3">${MESES[d.getMonth()]} ${d.getFullYear()}</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">${taxes.map((t, ti) => `
+        <div class="rise card-hover bg-white rounded-xl border border-amber-200 p-4 shadow-sm" style="--i:${ti}">
+          <h3 class="font-bold text-sm text-slate-800 mb-2">${esc(t)}</h3>
+          ${ev.filter(e => e.tax === t).map(e => {
+            const f = ymd(e.date);
+            const cls = f === hoy ? 'bg-emerald-200 font-bold' : f < hoy ? 'text-slate-400 line-through' : prox[t] === f ? 'bg-amber-200 font-bold next' : '';
+            return `<button data-k="${e.k}" data-t="${esc(e.terms)}" data-m="${mkey(d.getFullYear(), d.getMonth())}" data-f="${esc(fmt(e.date))}" data-vid="${e.manual || ''}" data-n="${esc(e.nota || '')}" data-x="${esc(e.tax)}" class="w-full flex justify-between text-sm px-2 py-1 rounded hover:ring-1 hover:ring-amber-500 ${cls}"><span>Term. ${esc(e.terms)}</span><span>${esc(fmt(e.date))}${e.manual ? ' ✎' : ''}</span></button>`;
+          }).join('')}
+        </div>`).join('')}</div></div>`;
+  }).join('');
+}
+
+// ===== CLIENTES (tiempo real) =====
+function suscribir() {
+  unsub = onSnapshot(collection(db, 'clientes'), snap => {
+    clientes = snap.docs.map(s => ({ id: s.id, ...s.data() }));
+    mostrarClientes(); llenarLista();
+    if (idHon) renderHistorial();
+    refrescarEstados();
+  }, err => {
+    console.error(err);
+    $('contenedorClientes').innerHTML = '<div class="py-6 text-center text-rose-600 font-medium">Error de permisos o conexión con Firestore.</div>';
+  });
+}
+$('buscador').addEventListener('input', mostrarClientes);
+
+function ultimoPago(c) {
+  const u = (c.honorarios || []).slice(-1)[0];
+  if (!u) return '<span class="text-slate-400 italic">Sin pagos cargados</span>';
+  return `<span class="font-bold text-emerald-800">${money(u.monto)}</span> <span class="text-xs text-slate-500">(${esc(u.periodoTexto || (u.periodos || []).join(', ') || u.periodo)} - ${esc(u.fecha)})</span>`;
+}
+function dato(titulo, valor, accion, vacio) {
+  return `<div class="bg-amber-50/70 p-3 rounded-lg border border-amber-100/80 flex flex-col justify-between">
+    <div><span class="block text-xs font-bold text-amber-900 uppercase">${titulo}</span>
+    <span class="text-sm text-slate-700 break-all">${valor ? esc(valor) : `<span class="text-slate-400 italic">${vacio}</span>`}</span></div>
+    ${valor ? `<button data-act="${accion}" class="mt-3 bg-amber-700 text-white py-1.5 px-2.5 rounded-md hover:bg-amber-800 text-xs font-medium self-start">Copiar</button>` : ''}</div>`;
+}
+function mostrarClientes() {
+  const q = $('buscador').value.toLowerCase();
+  const lista = ordenar([...clientes]).filter(c => ['nombre','cuit','banco','arca','rentas','condicion','estado','responsable'].some(k => (c[k] || '').toLowerCase().includes(q)) || nombres(c).some(n => n.toLowerCase().includes(q)));
+  const cont = $('contenedorClientes');
+  if (!lista.length) { cont.innerHTML = '<div class="py-6 text-center text-amber-900/70 font-medium">No se encontraron resultados</div>'; return; }
+  cont.innerHTML = lista.map((c, i) => {
+    const activo = c.estado !== 'Inactivo';
+    return `<div data-id="${c.id}" class="card-hover border border-amber-200/80 rounded-xl p-4 bg-white/95 shadow-sm">
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <div class="flex items-center space-x-3">
+          <button data-act="toggle" class="w-8 h-8 flex items-center justify-center bg-amber-100 text-amber-900 font-bold rounded-full hover:bg-amber-200">+</button>
+          <div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-xs font-extrabold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-md">#${i + 1}</span>
+              <h3 class="font-bold text-slate-800 text-base">${esc(c.nombre)}<span class="text-xs font-medium text-amber-800">${c.condicion ? ` (${esc(c.condicion)})` : ''}</span></h3>
+              <span class="${activo ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'} text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">${activo ? 'Activo' : 'Inactivo'}</span>${nombres(c).map(n => `<span class="bg-amber-100 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full">👤 ${esc(n)}</span>`).join('')}
+            </div>
+            <p class="text-xs text-slate-500 font-mono mt-0.5">CUIT: ${esc(c.cuit)} <span class="text-slate-400">${c.ultimaActualizacion ? '• Últ. Act: ' + esc(c.ultimaActualizacion) : ''}</span></p>
+          </div>
+        </div>
+        <div class="flex items-center space-x-2 self-end sm:self-center">
+          <button data-act="cuit" class="bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 text-xs font-medium">Copiar CUIT</button>
+          <button data-act="edit" class="text-amber-800 hover:text-amber-950 font-semibold text-xs px-2 py-1">Modificar</button>
+          <button data-act="del" class="text-rose-600 hover:text-rose-800 font-semibold text-xs px-2 py-1">Eliminar</button>
+        </div>
+      </div>
+      <div class="det hidden mt-4 pt-4 border-t border-amber-100 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+        ${dato('Banco', c.banco, 'banco', 'No especificado')}${dato('Clave ARCA', c.arca, 'arca', 'No especificada')}${dato('Clave Rentas', c.rentas, 'rentas', 'No especificada')}
+        <div class="bg-emerald-50/80 p-3 rounded-lg border border-emerald-200/80 flex flex-col justify-between">
+          <div><span class="block text-xs font-bold text-emerald-900 uppercase">Honorarios</span><span class="text-sm mt-1 block">${ultimoPago(c)}</span></div>
+          <button data-act="hon" class="mt-3 bg-emerald-700 text-white py-1.5 px-2.5 rounded-md hover:bg-emerald-800 text-xs font-medium self-start">Cargar Honorarios</button>
+        </div>
+      </div></div>`;
+  }).join('');
+}
+$('contenedorClientes').addEventListener('click', async e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const card = b.closest('[data-id]'), c = clientes.find(x => x.id === card.dataset.id), a = b.dataset.act;
+  if (!c) return;
+  if (a === 'toggle') {
+    const det = card.querySelector('.det'), abierto = det.classList.toggle('hidden');
+    b.textContent = abierto ? '+' : '-'; b.classList.toggle('bg-amber-800', !abierto); b.classList.toggle('text-white', !abierto);
+  } else if (['cuit', 'banco', 'arca', 'rentas'].includes(a)) {
+    const txt = a === 'cuit' ? c.cuit.replace(/-/g, '') : c[a];
+    navigator.clipboard.writeText(txt).then(() => { const o = b.textContent; b.textContent = '¡Copiado!'; setTimeout(() => b.textContent = o, 1500); });
+  } else if (a === 'edit') editar(c);
+  else if (a === 'hon') { ir('honorarios'); $('honCliente').value = `${c.nombre} — ${c.cuit}`; elegirCliente(); }
+  else if (a === 'del' && confirm('¿Estás seguro de que deseas eliminar este cliente?')) {
+    try { await deleteDoc(doc(db, 'clientes', c.id)); toast('Cliente eliminado correctamente.'); }
+    catch (err) { console.error(err); toast('No se pudo eliminar el registro.', 'error'); }
+  }
+});
+
+// ===== FORMULARIO CLIENTE =====
+function validarCUIT(cuit) {
+  const s = cuit.replace(/\D/g, ''); if (s.length !== 11 || !['20','23','24','27','30','33','34'].includes(s.slice(0, 2))) return false;
+  const k = [5,4,3,2,7,6,5,4,3,2]; let t = 0; for (let i = 0; i < 10; i++) t += +s[i] * k[i];
+  let r = 11 - (t % 11); if (r === 11) r = 0; if (r === 10) r = 9; return r === +s[10];
+}
+$('cuit').addEventListener('input', e => {
+  let v = e.target.value.replace(/\D/g, '').slice(0, 11);
+  if (v.length > 10) v = v.replace(/^(\d{2})(\d{8})(\d)$/, '$1-$2-$3'); else if (v.length > 2) v = v.replace(/^(\d{2})(\d{0,8})/, '$1-$2');
+  e.target.value = v;
+});
+function abrirForm(abrir) {
+  $('formContainer').classList.toggle('hidden', !abrir);
+  $('btnToggleForm').textContent = abrir ? '✕ Cerrar Formulario' : '+ Nuevo Cliente';
+  if (abrir) $('nombre').focus();
+}
+function limpiarForm() {
+  $('clientForm').reset(); renderOblig(); idEditando = null; $('btnGuardar').textContent = 'Guardar Cliente';
+  $('btnCancelar').classList.add('hidden'); abrirForm(false);
+}
+$('btnToggleForm').addEventListener('click', () => $('formContainer').classList.contains('hidden') ? abrirForm(true) : limpiarForm());
+$('btnCancelar').addEventListener('click', limpiarForm);
+function editar(c) {
+  $('nombre').value = c.nombre; $('cuit').value = c.cuit; $('banco').value = c.banco || ''; $('arca').value = c.arca || ''; $('rentas').value = c.rentas || '';
+  document.querySelectorAll('input[name="condicion"]').forEach(r => r.checked = r.value === c.condicion);
+  document.querySelectorAll('input[name="estado"]').forEach(r => r.checked = r.value === (c.estado || 'Activo'));
+  renderOblig(asigDe(c));
+  idEditando = c.id; $('btnGuardar').textContent = 'Actualizar Cliente'; $('btnCancelar').classList.remove('hidden');
+  abrirForm(true); window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+$('clientForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const cuit = $('cuit').value.trim();
+  if (!validarCUIT(cuit)) { toast('El CUIT ingresado no es válido.', 'error'); return $('cuit').focus(); }
+  const cond = document.querySelector('input[name="condicion"]:checked'), est = document.querySelector('input[name="estado"]:checked');
+  const datos = { nombre: $('nombre').value.trim(), cuit, condicion: cond ? cond.value : '', estado: est ? est.value : 'Activo',
+    obligaciones: leerOblig().ob, asignaciones: leerOblig().as, banco: $('banco').value.trim(), arca: $('arca').value.trim(), rentas: $('rentas').value.trim(), ultimaActualizacion: ahora() };
+  try {
+    if (idEditando === null) { datos.honorarios = []; await addDoc(collection(db, 'clientes'), datos); toast('Cliente registrado exitosamente.'); }
+    else { await updateDoc(doc(db, 'clientes', idEditando), datos); toast('Cliente actualizado exitosamente.'); }
+    limpiarForm();
+  } catch (err) { console.error(err); toast('Hubo un error al guardar en la base de datos.', 'error'); }
+});
+
+// ===== HONORARIOS =====
+const etiqueta = c => `${c.nombre} — ${c.cuit}`;
+function llenarLista() { $('dlClientes').innerHTML = ordenar([...clientes]).map(c => `<option value="${esc(etiqueta(c))}"></option>`).join(''); }
+function elegirCliente() {
+  const c = clientes.find(x => etiqueta(x) === $('honCliente').value);
+  idHon = c ? c.id : null; periodos = []; renderChips();
+  $('formHonorarios').classList.toggle('hidden', !c); $('histWrap').classList.toggle('hidden', !c);
+  $('honAviso').textContent = c ? '' : ($('honCliente').value ? 'Elegí un cliente de la lista desplegable.' : '');
+  if (c) { $('honFecha').value = ymd(new Date()); $('honMonto').value = ''; renderHistorial(); }
+}
+$('honCliente').addEventListener('input', elegirCliente);
+function renderChips() {
+  $('chips').innerHTML = periodos.map((p, i) => `<span class="bg-amber-100 text-amber-900 px-2.5 py-1 rounded-full text-xs font-semibold border border-amber-200">${esc(p)}
+    <button type="button" data-i="${i}" class="text-rose-600 font-bold ml-1">✕</button></span>`).join('');
+}
+function sumarPeriodo() { const v = $('inPeriodo').value.trim(); if (v) { periodos.push(v); $('inPeriodo').value = ''; renderChips(); } }
+$('btnPeriodo').addEventListener('click', sumarPeriodo);
+$('inPeriodo').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); sumarPeriodo(); } });
+$('chips').addEventListener('click', e => { const b = e.target.closest('[data-i]'); if (b) { periodos.splice(+b.dataset.i, 1); renderChips(); } });
+function renderHistorial() {
+  const c = clientes.find(x => x.id === idHon); if (!c) return;
+  const h = [...(c.honorarios || [])].reverse();
+  $('historial').innerHTML = h.length ? h.map(p => `<div class="flex justify-between items-center bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs">
+    <div><span class="font-bold text-slate-800">Períodos: ${esc(p.periodoTexto || (p.periodos || []).join(', ') || p.periodo)}</span>
+    <span class="block text-[11px] text-slate-500">Fecha: ${esc(p.fecha)} ${p.medioPago ? '• ' + esc(p.medioPago) : ''} ${p.tipoComprobante ? '• ' + esc(p.tipoComprobante) : ''}</span></div>
+    <span class="font-bold text-emerald-700 text-sm">${money(p.monto)}</span></div>`).join('')
+    : '<p class="text-xs text-slate-400 italic text-center py-2">No hay pagos registrados anteriormente.</p>';
+}
+$('formHonorarios').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!idHon) return;
+  if (!periodos.length) { toast('Debes agregar al menos un período.', 'error'); return $('inPeriodo').focus(); }
+  const pago = { fecha: $('honFecha').value, periodos: [...periodos], periodoTexto: periodos.join(', '), monto: parseFloat($('honMonto').value),
+    medioPago: document.querySelector('input[name="medio"]:checked').value, tipoComprobante: document.querySelector('input[name="comp"]:checked').value, fechaRegistro: ahora() };
+  try {
+    await updateDoc(doc(db, 'clientes', idHon), { honorarios: arrayUnion(pago), ultimaActualizacion: ahora() });
+    toast('Pago de honorarios registrado correctamente.'); $('honMonto').value = ''; periodos = []; renderChips();
+  } catch (err) { console.error(err); toast('No se pudo guardar el pago.', 'error'); }
+});
+
+// ===== OBLIGACIONES Y ESTADOS =====
+$('oblTodas').addEventListener('click', () => document.querySelectorAll('#obligBox input').forEach(x => { x.checked = true; x.closest('[data-row]').querySelector('.chips').classList.remove('hidden'); }));
+function mkey(y, m) { return `${y}_${pad(m + 1)}`; }                  // m = mes 0-11
+function skey(k, mk) { return k === 'gan' ? `gan_${mk.slice(0, 4)}` : `${k}_${mk}`; }   // Ganancias: un estado por año
+function terminaEn(cuit, terms) {                                      // terminación = último dígito del CUIT
+  const d = +String(cuit).replace(/\D/g, '').slice(-1), m = /^(\d)-(\d)$/.exec(terms);
+  return !m || (d >= +m[1] && d <= +m[2]);
+}
+function periodoDefault(k, y, m) {                                     // IVA y Seg. Social: mes anterior
+  if (k === 'gan') return `Año ${m >= 6 ? y : y - 1}`;
+  const d = new Date(y, ['iva', 'aut', 'f931', 'iibb', 'cm'].includes(k) ? m - 1 : m, 1);
+  return `${MESES[d.getMonth()]} ${d.getFullYear()}`;
+}
+async function marcar(c, k, mk) {
+  if (!c) return;
+  const s = (c.estados || {})[skey(k, mk)], ref = doc(db, 'clientes', c.id), campo = `estados.${skey(k, mk)}`;
+  try {
+    if (s && s.estado === 'Finalizado') {
+      if (confirm(`¿Volver a "No se hizo" para ${c.nombre} (${SHORT[k]})?`)) await updateDoc(ref, { [campo]: deleteField() });
+    } else {
+      const [y, mm] = mk.split('_').map(Number);
+      const p = prompt(`Período realizado\n${c.nombre} · ${SHORT[k]}`, periodoDefault(k, y, mm - 1));
+      if (p && p.trim()) await updateDoc(ref, { [campo]: { estado: 'Finalizado', periodo: p.trim(), fecha: ahora() } });
+    }
+  } catch (err) { console.error(err); toast('No se pudo guardar el estado.', 'error'); }
+}
+
+// Clientes de un grupo de vencimiento (click en Inicio)
+let vActual = null;
+$('vencimientos').addEventListener('click', e => {
+  const b = e.target.closest('[data-k]'); if (!b) return;
+  vActual = { k: b.dataset.k, terms: b.dataset.t, mk: b.dataset.m, f: b.dataset.f, vid: b.dataset.vid, nota: b.dataset.n, x: b.dataset.x };
+  $('modalVenc').classList.remove('hidden'); renderVenc();
+});
+$('vencCerrar').addEventListener('click', () => { $('modalVenc').classList.add('hidden'); vActual = null; });
+function renderVenc() {
+  if (!vActual) return;
+  const { k, terms, mk, f } = vActual;
+  $('vencTitulo').textContent = `${vActual.x || OBLIG[k]} · Term. ${terms}`; $('vencSub').textContent = `Vence ${f}${vActual.nota ? ' · ' + vActual.nota : ''}`;
+  $('vencPie').innerHTML = vActual.vid ? '<button data-a="edit" class="bg-amber-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold">✎ Editar fecha</button><button data-a="del" class="bg-rose-100 text-rose-700 px-3 py-1.5 rounded-lg text-xs font-semibold">Eliminar fecha manual</button>' : '<button data-a="new" class="bg-amber-100 text-amber-900 px-3 py-1.5 rounded-lg text-xs font-semibold">✎ Fijar fecha manual</button>';
+  const l = !OBLIG[k] ? [] : ordenar(clientes.filter(c => c.estado !== 'Inactivo' && (c.obligaciones || []).includes(k) && terminaEn(c.cuit, terms)));
+  $('vencLista').innerHTML = l.length ? l.map(c => {
+    const s = (c.estados || {})[skey(k, mk)], ok = s && s.estado === 'Finalizado';
+    return `<div class="flex justify-between items-center gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs">
+      <div><div class="font-bold text-slate-800">${esc(c.nombre)}</div><div class="text-slate-500 font-mono">${esc(c.cuit)}</div></div>
+      <div class="flex items-center gap-2"><span class="${ok ? 'text-emerald-700' : 'text-rose-600'} font-semibold">${ok ? 'Finalizado · ' + esc(s.periodo) : 'No se hizo'}</span>
+      <button data-id="${c.id}" class="${ok ? 'bg-slate-300 text-slate-700' : 'bg-emerald-700 text-white'} px-2 py-1 rounded-md">${ok ? 'Deshacer' : 'Finalizar'}</button></div></div>`;
+  }).join('') : (!OBLIG[k] ? '<p class="text-sm text-slate-500 italic py-3">Recordatorio manual: no se asocia a clientes.</p>' : '<p class="text-sm text-slate-500 italic py-3">Ningún cliente activo tiene esta obligación con esa terminación. Tildala en la ficha del cliente.</p>');
+}
+$('vencLista').addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (b && vActual) marcar(clientes.find(c => c.id === b.dataset.id), vActual.k, vActual.mk); });
+
+// Lista limpia de estados
+// Responsables por obligación (varias personas pueden compartir un cliente)
+function responsables(c, k) { return c.asignaciones ? (c.asignaciones[k] || []) : (c.responsable ? [c.responsable] : []); }   // compatible con el campo anterior
+function asigDe(c) { const o = {}; (c.obligaciones || []).forEach(k => o[k] = responsables(c, k)); return o; }
+function nombres(c) { return [...new Set((c.obligaciones || []).flatMap(k => responsables(c, k)))]; }
+function pertenece(c, k, q) { const rs = responsables(c, k); return q === 'Todos' || (q === 'Sin asignar' ? !rs.length : rs.includes(q)); }
+const chipCls = on => `px-2 py-0.5 rounded-full text-[11px] font-semibold border transition-colors ${on ? 'bg-amber-700 text-white border-amber-700' : 'bg-white text-slate-600 border-slate-300 hover:border-amber-500'}`;
+function renderOblig(sel = {}) {
+  $('obligBox').innerHTML = Object.entries(OBLIG).map(([k, v]) => `<div data-row="${k}" class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 border-b border-amber-100 last:border-0">
+    <label class="flex items-center gap-2 text-sm w-64"><input type="checkbox" ${sel[k] ? 'checked' : ''}> ${v}</label>
+    <div class="chips flex flex-wrap gap-1 ${sel[k] ? '' : 'hidden'}">${EQUIPO.map(n => { const on = (sel[k] || []).includes(n); return `<button type="button" data-n="${n}" data-on="${on ? 1 : 0}" class="${chipCls(on)}">${n}</button>`; }).join('')}</div></div>`).join('');
+}
+function leerOblig() {
+  const ob = [], as = {};
+  document.querySelectorAll('#obligBox [data-row]').forEach(r => {
+    if (!r.querySelector('input').checked) return;
+    const k = r.dataset.row; ob.push(k); as[k] = [...r.querySelectorAll('button[data-on="1"]')].map(b => b.dataset.n);
+  });
+  return { ob, as };
+}
+$('obligBox').addEventListener('click', e => { const b = e.target.closest('button[data-n]'); if (!b) return; const on = b.dataset.on !== '1'; b.dataset.on = on ? 1 : 0; b.className = chipCls(on); });
+$('obligBox').addEventListener('change', e => { const x = e.target.closest('input'); if (x) x.closest('[data-row]').querySelector('.chips').classList.toggle('hidden', !x.checked); });
+renderOblig();
+let estQuien = (() => { try { return localStorage.getItem('trabajador') || 'Todos'; } catch (e) { return 'Todos'; } })();
+let msgCat = '', msgRaw = '', msgUlt = '';
+const MSG = {
+  vacio: ['Todavía no hay trabajos para mostrar acá. ¡Buen momento para organizar la semana!', 'Sin obligaciones cargadas en este grupo. Cuando haya trabajo, vas a ver cómo avanzás.', 'Todo tranquilo por ahora, {n}. Aprovechá para dejar el terreno listo.'],
+  completo: ['¡Todo finalizado, {n}! Así se cumple en tiempo y forma. 🎉', '¡100%! Ningún vencimiento se les escapa. 👏', 'Misión cumplida, {n}. Hoy se puede trabajar con tranquilidad. 🙌', 'Cero pendientes. Eso es un trabajo bien hecho, {n}. 🌟'],
+  vencidas: ['Atención, {n}: {v} con fecha vencida. Es el momento de ponerse al día antes de que se acumulen. ⏰', '{n}, hay {v} con la fecha vencida. Un buen primer paso es cerrar el más viejo. 💪', 'Hay {v} fuera de término. Cuanto antes se resuelva, menos intereses para el cliente. ⚠️', 'Se pasó la fecha de {v}. ¡Vamos que se puede regularizar, {n}! 🚀'],
+  hoy: ['Hoy vence la fecha de {h}. ¡Un último empujón, {n}! 💪', '¡Ojo con hoy! Vence la fecha de {h}. Todavía hay tiempo de cumplir. ⏳', '{n}, hoy es el día: vence la fecha de {h}. ¡Vos podés! 🔥'],
+  cerca: ['En los próximos 3 días vence la fecha de {c}. Adelantarse hoy es dormir tranquilo mañana. 🗓️', 'Se vienen vencimientos: {c} en los próximos días. ¡A organizarse, {n}! 📌', 'Falta poco para el cierre de {c}. Si empezás hoy, llegás sobrados. ✅'],
+  bajo: ['Todo gran avance empieza con el primer trabajo finalizado. ¡Vamos, {n}! 🚀', 'Hay mucho por hacer, pero se hace de a uno. Elegí uno y arrancá. 💪', 'Por cerrar: {p}. Cada "Finalizado" suma, {n}. 🌱'],
+  medio: ['Vas por buen camino, {n}: {d} de {t} finalizados. ¡No aflojes! 💪', 'Ya hay una buena parte hecha. Seguí así, que el mes se cierra sin sobresaltos. 📈', 'Buen ritmo, {n}. Por cerrar: {p}; el próximo vencimiento ya está a tiro. 🎯'],
+  alto: ['¡Casi llegás! Por cerrar este mes: {p}. 🔥', 'Falta muy poquito, {n}. ¡El último tramo es el más satisfactorio! 🏁', 'Ya está casi todo: {d} de {t}. ¡Un esfuerzo más! ✨']
+};
+const COLORES = { vencidas: ['from-rose-500 to-rose-400', 'bg-rose-50 text-rose-800 border-rose-200'], hoy: ['from-orange-500 to-amber-400', 'bg-orange-50 text-orange-800 border-orange-200'], cerca: ['from-amber-500 to-yellow-400', 'bg-amber-50 text-amber-900 border-amber-200'] };
+function statsEstado(lista, mk, evs, hoy, quien) {
+  const r = { tot: 0, ok: 0, venc: 0, hoy: 0, cerca: 0 }, h0 = new Date(hoy + 'T00:00:00');
+  lista.forEach(c => (c.obligaciones || []).forEach(k => {
+    if (!pertenece(c, k, quien)) return; r.tot++; const s = (c.estados || {})[skey(k, mk)];
+    if (s && s.estado === 'Finalizado') { r.ok++; return; }
+    const ev = evs.find(e => e.k === k && terminaEn(c.cuit, e.terms)); if (!ev) return;
+    const f = ymd(ev.date), dias = Math.round((ev.date - h0) / 864e5);
+    if (f < hoy) r.venc++; else if (f === hoy) r.hoy++; else if (dias <= 3) r.cerca++;
+  }));
+  return r;
+}
+function mensaje(r, nombre, forzar) {
+  const pend = r.tot - r.ok, pct = r.tot ? r.ok / r.tot : 0;
+  const cat = !r.tot ? 'vacio' : !pend ? 'completo' : r.venc ? 'vencidas' : r.hoy ? 'hoy' : r.cerca ? 'cerca' : pct < .34 ? 'bajo' : pct < .75 ? 'medio' : 'alto';
+  if (cat !== msgCat || forzar) {
+    const a = MSG[cat]; let i = Math.floor(Math.random() * a.length); if (a.length > 1 && a[i] === msgUlt) i = (i + 1) % a.length;
+    msgCat = cat; msgRaw = a[i]; msgUlt = a[i];
+  }
+  const tr = n => n === 1 ? '1 trabajo' : `${n} trabajos`, val = { n: nombre, v: tr(r.venc), h: tr(r.hoy), c: tr(r.cerca), d: r.ok, t: r.tot, p: tr(pend) };
+  return { cat, txt: msgRaw.replace(/\{(\w)\}/g, (_, x) => val[x]) };
+}
+function renderEstados(forzar) {
+  if (!$('estMes').value) $('estMes').value = ymd(new Date()).slice(0, 7);
+  const [Y, M] = $('estMes').value.split('-').map(Number), mk = `${Y}_${pad(M)}`, solo = $('estPend').checked, ks = Object.keys(OBLIG);
+  const hoy = ymd(new Date()), evs = vencMes(Y, M - 1);
+  const base = ordenar(clientes.filter(c => c.estado !== 'Inactivo' && (c.obligaciones || []).length));
+  $('estEquipo').innerHTML = ['Todos', ...EQUIPO, 'Sin asignar'].map(q => {
+    const r = statsEstado(base, mk, evs, hoy, q), pc = r.tot ? Math.round(r.ok / r.tot * 100) : 0, on = q === estQuien;
+    if (q === 'Sin asignar' && !r.tot) return '';
+    return `<button data-q="${q}" class="card-hover text-left rounded-xl border p-3 ${on ? 'bg-amber-800 text-white border-amber-800 shadow-md' : 'bg-white border-amber-200'}">
+      <div class="flex justify-between items-baseline"><span class="font-bold text-sm">${q === 'Todos' ? 'Todo el equipo' : q}</span><span class="text-xs font-semibold">${pc}%</span></div>
+      <div class="h-1.5 rounded-full mt-2 overflow-hidden ${on ? 'bg-amber-950/50' : 'bg-amber-100'}"><div data-w="${pc}" class="h-full rounded-full bg-emerald-400 transition-all duration-700" style="width:0"></div></div>
+      <div class="text-[11px] mt-1 ${on ? 'text-amber-200' : 'text-slate-500'}">${r.tot - r.ok} pendientes de ${r.tot}</div></button>`;
+  }).join('');
+  setTimeout(() => $('estEquipo').querySelectorAll('[data-w]').forEach(b => b.style.width = b.dataset.w + '%'), 30);
+
+  const lista = base.filter(c => (c.obligaciones || []).some(k => pertenece(c, k, estQuien)));
+  const r = statsEstado(base, mk, evs, hoy, estQuien), pend = r.tot - r.ok, pct = r.tot ? Math.round(r.ok / r.tot * 100) : 0;
+  const m = mensaje(r, EQUIPO.includes(estQuien) ? estQuien : 'equipo', forzar), col = COLORES[m.cat] || ['from-emerald-500 to-emerald-400', 'bg-emerald-50 text-emerald-800 border-emerald-200'];
+  $('estBar').className = `h-full bg-gradient-to-r ${col[0]} rounded-full transition-all duration-700`; $('estBar').style.width = pct + '%';
+  const clsMsg = `rounded-xl border px-4 py-3 text-sm font-medium mb-4 ${col[1]}`;
+  $('estMsg').textContent = m.txt; $('estMsg').className = clsMsg;
+  if (forzar) { void $('estMsg').offsetWidth; $('estMsg').className = clsMsg + ' rise'; }
+  $('estResumen').textContent = `${estQuien === 'Todos' ? 'Todo el equipo' : estQuien}: ${pend} pendientes de ${r.tot} · ${pct}% listo`;
+
+  const filas = lista.map(c => {
+    let hay = false;
+    const celdas = ks.map(k => {
+      if (!(c.obligaciones || []).includes(k) || !pertenece(c, k, estQuien)) return '<td class="p-2 text-center text-slate-300">—</td>';
+      const s = (c.estados || {})[skey(k, mk)], ok = s && s.estado === 'Finalizado', ev = evs.find(e => e.k === k && terminaEn(c.cuit, e.terms));
+      if (!ok) hay = true;
+      const rs = responsables(c, k), resp = `<div class="text-[10px] ${rs.length ? 'text-amber-800 font-semibold' : 'text-slate-400 italic'}">${rs.length ? '👤 ' + rs.map(esc).join(', ') : 'Sin asignar'}</div>`;
+      const nota = ok || !ev ? '' : `<div class="text-[10px] ${ymd(ev.date) < hoy ? 'text-rose-600 font-semibold' : 'text-slate-400'}">vence ${pad(ev.date.getDate())}/${pad(ev.date.getMonth() + 1)}</div>`;
+      return `<td class="p-1.5 text-center"><button data-id="${c.id}" data-k="${k}" class="w-full px-2 py-1 rounded-md font-semibold ${ok ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-700'}">${ok ? 'Finalizado · ' + esc(s.periodo) : 'No se hizo'}</button>${nota}${resp}</td>`;
+    }).join('');
+    return solo && !hay ? '' : `<tr class="border-t border-amber-100"><td class="p-2 font-semibold">${esc(c.nombre)}<div class="font-mono text-[10px] text-slate-500">${esc(c.cuit)}</div></td>${celdas}</tr>`;
+  }).join('');
+  $('estTabla').innerHTML = `<thead class="bg-amber-100 text-amber-900"><tr><th class="p-2 text-left">Cliente</th>${ks.map(k => `<th class="p-2">${SHORT[k]}</th>`).join('')}</tr></thead>
+    <tbody>${filas || '<tr><td colspan="9" class="p-4 text-center text-slate-400">Sin resultados para este filtro. Tildá las obligaciones y asigná un responsable en la ficha de cada cliente.</td></tr>'}</tbody>`;
+}
+$('estMes').addEventListener('change', () => renderEstados(true)); $('estPend').addEventListener('change', () => renderEstados(true));
+$('estEquipo').addEventListener('click', e => {
+  const b = e.target.closest('[data-q]'); if (!b) return;
+  estQuien = b.dataset.q; try { localStorage.setItem('trabajador', estQuien); } catch (err) {}
+  renderEstados(true);
+});
+$('estTabla').addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (b) marcar(clientes.find(c => c.id === b.dataset.id), b.dataset.k, $('estMes').value.replace('-', '_')); });
+function refrescarEstados() { renderVenc(); if (!$('v-inicio').classList.contains('hidden')) renderHero(); if (!$('v-estados').classList.contains('hidden')) renderEstados(); }
+
+// ===== Aleja (asistente de voz, reglas locales) =====
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const largo = d => d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+function jlog(quien, txt) {
+  const p = document.createElement('p'); p.className = quien === 'yo' ? 'text-slate-300' : 'text-cyan-300';
+  p.textContent = (quien === 'yo' ? 'Vos: ' : 'Aleja: ') + txt; $('jLog').appendChild(p); $('jLog').scrollTop = 1e6;
+}
+if ('speechSynthesis' in window) speechSynthesis.getVoices();
+function hablar(txt) {
+  jlog('j', txt); if (!('speechSynthesis' in window)) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(txt), vs = speechSynthesis.getVoices().filter(v => v.lang.startsWith('es'));
+  const fem = /female|mujer|elena|helena|sabina|paulina|monica|laura|lucia|elvira|dalia|salome|camila|valentina|paloma|marisol|google espa/i, masc = /\bmale\b|jorge|pablo|raul|diego|juan|carlos|enrique|tomas|alvaro|jaime|gonzalo/i;
+  u.voice = vs.find(v => fem.test(v.name) && !masc.test(v.name) && /es-(AR|MX|US|419)/.test(v.lang)) || vs.find(v => fem.test(v.name) && !masc.test(v.name)) || vs.find(v => !masc.test(v.name)) || vs[0] || null;
+  u.lang = u.voice ? u.voice.lang : 'es-AR'; u.pitch = 1.1; u.rate = 1; speechSynthesis.speak(u);
+}
+function pendientesMes(mk) {
+  const out = [];
+  clientes.filter(c => c.estado !== 'Inactivo').forEach(c => (c.obligaciones || []).forEach(k => { const s = (c.estados || {})[skey(k, mk)]; if (!s || s.estado !== 'Finalizado') out.push({ c, k }); }));
+  return out;
+}
+function responder(q) {
+  const t = q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''), h = new Date(), hoy = ymd(h), mk = mkey(h.getFullYear(), h.getMonth());
+  const ev = [0, 1].flatMap(i => vencMes(h.getFullYear(), h.getMonth() + i)).filter(e => ymd(e.date) >= hoy).sort((a, b) => a.date - b.date);
+  const act = clientes.filter(c => c.estado !== 'Inactivo');
+  if (!clientes.length) return 'Todavía no cargué los datos de clientes. Probá en unos segundos.';
+  let m = /(?:busca\w*|cliente|datos de)\s+(.+)/.exec(t);
+  if (m && !/cuantos/.test(t)) {
+    const n = m[1].replace(/^(a|al|de|del|la|el)\s+/, ''), c = clientes.find(x => (x.nombre || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(n));
+    if (!c) return `No encontré ningún cliente que se llame ${n}.`;
+    const ob = (c.obligaciones || []).map(k => SHORT[k]).join(', ') || 'ninguna cargada', pe = pendientesMes(mk).filter(x => x.c.id === c.id).length;
+    return `${c.nombre}. CUIT ${c.cuit.replace(/-/g, ' ')}. ${c.condicion || 'Sin condición fiscal'}, ${c.estado || 'Activo'}. Obligaciones: ${ob}. Pendientes este mes: ${pe}.`;
+  }
+  if (/cuantos clientes|total de clientes/.test(t)) return `Hay ${clientes.length} clientes cargados, ${act.length} activos.`;
+  if (/pendiente|no se hizo|falta/.test(t)) {
+    const p = pendientesMes(mk); if (!p.length) return 'No hay trabajos pendientes este mes.';
+    return `Hay ${p.length} trabajos pendientes en ${MESES[h.getMonth()]}. ` + p.slice(0, 5).map(x => `${x.c.nombre}: ${SHORT[x.k]}`).join('. ') + (p.length > 5 ? `. Y ${p.length - 5} más.` : '.');
+  }
+  const k = /ganancia/.test(t) ? 'gan' : /convenio|multilateral/.test(t) ? 'cm' : /ingresos brutos|iibb/.test(t) ? 'iibb' : /autonom/.test(t) ? 'aut' : /empleador|931|seguridad|cargas/.test(t) ? 'f931' : /monotrib/.test(t) ? 'mono' : /\biva\b/.test(t) ? 'iva' : /facilidad|plan de pago/.test(t) ? 'plan' : null;
+  if (k) {
+    const e = ev.find(x => x.k === k); if (!e) return 'No encuentro un próximo vencimiento.';
+    return `El próximo vencimiento de ${OBLIG[k]} es el ${largo(e.date)}, terminaciones ${e.terms}. Tenés ${act.filter(c => (c.obligaciones || []).includes(k) && terminaEn(c.cuit, e.terms)).length} clientes en ese grupo.`;
+  }
+  if (/resumen|hoy|buen|hola|novedad|vence/.test(t)) {
+    const hh = ev.filter(e => ymd(e.date) === hoy), p = pendientesMes(mk).length;
+    return `Hoy es ${largo(h)}. ` + (hh.length ? 'Vencen hoy: ' + hh.map(e => `${SHORT[e.k]} terminaciones ${e.terms}`).join(', ') + '. ' : 'No hay vencimientos hoy. ') +
+      (ev[0] ? `El próximo es ${SHORT[ev[0].k]}, terminaciones ${ev[0].terms}, el ${largo(ev[0].date)}. ` : '') + `Trabajos pendientes este mes: ${p}.`;
+  }
+  return 'No entendí. Podés pedirme el resumen, los pendientes, el vencimiento de IVA o Monotributo, o buscar un cliente.';
+}
+function preguntar(q) { jlog('yo', q); hablar(responder(q)); }
+$('jOrb').addEventListener('click', () => {
+  const abrir = $('jPanel').classList.toggle('hidden') === false;
+  if (abrir && !$('jLog').children.length) hablar('Buen día. Soy Aleja. Pedime el resumen, los pendientes, un vencimiento o buscá un cliente.');
+});
+$('jIn').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.value.trim()) { const q = e.target.value.trim(); e.target.value = ''; preguntar(q); } });
+$('jMic').addEventListener('click', () => {
+  if (!SR) return hablar('Este navegador no permite reconocimiento de voz. Probá con Chrome o Edge, o escribime.');
+  const r = new SR(); r.lang = 'es-AR'; r.onresult = e => preguntar(e.results[0][0].transcript); r.onerror = () => jlog('j', 'No pude escucharte.');
+  r.start(); jlog('j', 'Escuchando...');
+});
+$('jStop').addEventListener('click', () => speechSynthesis.cancel());
+
+// ===== VENCIMIENTOS CARGADOS A MANO =====
+function suscribirManuales() {
+  unsubMan = onSnapshot(collection(db, 'vencimientos'), snap => {
+    manuales = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (!$('v-inicio').classList.contains('hidden')) renderInicio();
+  }, err => console.error('vencimientos', err));
+}
+$('manTax').innerHTML = Object.entries(OBLIG).map(([k, v]) => `<option value="${k}">${v}</option>`).join('') + '<option value="otro">Otro (recordatorio)</option>';
+$('manTax').addEventListener('change', () => $('manNombreWrap').classList.toggle('hidden', $('manTax').value !== 'otro'));
+function abrirManual(v) {
+  v = v || {}; manEdit = v.id || null;
+  $('manTitulo').textContent = manEdit ? 'Editar vencimiento' : 'Cargar vencimiento';
+  $('manTax').value = v.k || 'iva'; $('manTax').dispatchEvent(new Event('change'));
+  $('manNombre').value = v.nombre || ''; $('manTerms').value = v.terms || 'Todas'; $('manFecha').value = v.fecha || ''; $('manNota').value = v.nota || '';
+  $('modalManual').classList.remove('hidden');
+}
+let manEdit = null;
+$('btnManual').addEventListener('click', () => abrirManual());
+$('manCancel').addEventListener('click', () => $('modalManual').classList.add('hidden'));
+$('formManual').addEventListener('submit', async e => {
+  e.preventDefault();
+  let terms = $('manTerms').value.trim() || 'Todas';
+  if (/^\d$/.test(terms)) terms = `${terms}-${terms}`;
+  if (!/^(Todas|\d-\d)$/.test(terms)) return toast('Terminaciones: "Todas" o un rango como 0-3.', 'error');
+  const k = $('manTax').value, nombre = $('manNombre').value.trim();
+  if (k === 'otro' && !nombre) return toast('Escribí el nombre del vencimiento.', 'error');
+  const d = { k, nombre: k === 'otro' ? nombre : '', terms, fecha: $('manFecha').value, nota: $('manNota').value.trim() };
+  try {
+    if (manEdit) await updateDoc(doc(db, 'vencimientos', manEdit), d); else await addDoc(collection(db, 'vencimientos'), d);
+    toast('Vencimiento guardado.'); $('modalManual').classList.add('hidden'); $('modalVenc').classList.add('hidden'); vActual = null;
+  } catch (err) { console.error(err); toast('No se pudo guardar el vencimiento.', 'error'); }
+});
+$('vencPie').addEventListener('click', async e => {
+  const b = e.target.closest('[data-a]'); if (!b || !vActual) return;
+  const m = manuales.find(x => x.id === vActual.vid);
+  if (b.dataset.a === 'new') return abrirManual({ k: vActual.k, terms: vActual.terms });
+  if (!m) return;
+  if (b.dataset.a === 'edit') return abrirManual(m);
+  if (confirm('¿Eliminar esta fecha manual? Se vuelve a la fecha calculada.')) {
+    try { await deleteDoc(doc(db, 'vencimientos', m.id)); toast('Fecha manual eliminada.'); $('modalVenc').classList.add('hidden'); vActual = null; }
+    catch (err) { console.error(err); toast('No se pudo eliminar.', 'error'); }
+  }
+});
+
+// ===== IMPRESIÓN =====
+const modal = $('modalImprimir');
+$('btnImprimir').addEventListener('click', () => modal.classList.remove('hidden'));
+$('btnImpCancelar').addEventListener('click', () => modal.classList.add('hidden'));
+$('btnImpOk').addEventListener('click', () => {
+  const cond = document.querySelector('input[name="fCond"]:checked').value, est = document.querySelector('input[name="fEst"]:checked').value;
+  const f = ordenar(clientes.filter(c => (cond === 'Todos' || (c.condicion || '') === cond) && (est === 'Todos' || (c.estado || 'Activo') === est)));
+  if (!f.length) return toast('No hay clientes que coincidan con los filtros seleccionados.', 'error');
+  modal.classList.add('hidden');
+  const w = window.open('', '_blank'); if (!w) return toast('Habilitá las ventanas emergentes en tu navegador.', 'error');
+  w.document.open(); w.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Reporte de Clientes</title><style>
+    body{font-family:Arial,sans-serif;padding:20px;color:#333}.e{font-size:11px;font-weight:bold;text-transform:uppercase;color:#92400e}
+    h2{text-align:center;color:#78350f;margin:5px 0}h4{text-align:center;color:#666;margin:0 0 20px;font-size:12px;font-weight:normal}
+    table{width:100%;border-collapse:collapse;font-size:11px}th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left}
+    th{background:#fef3c7;color:#78350f;text-transform:uppercase;font-size:10px}tr:nth-child(even){background:#f8fafc}@page{margin:1.5cm}</style></head><body>
+    <div class="e">Estudio Contable Laura B. Deiana</div><h2>Listado de Clientes</h2>
+    <h4>Condición: ${esc(cond === 'R.I.' ? 'Responsables Inscriptos' : cond)} | Estado: ${esc(est)} (Total: ${f.length})</h4>
+    <table><thead><tr><th>#</th><th>Nombre / Razón Social</th><th>CUIT</th><th>Condición</th><th>Estado</th><th>Banco</th><th>ARCA</th><th>Rentas</th></tr></thead><tbody>
+    ${f.map((c, i) => `<tr><td>${i + 1}</td><td><b>${esc(c.nombre)}</b></td><td>${esc(c.cuit)}</td><td>${esc(c.condicion || '-')}</td><td>${esc(c.estado || 'Activo')}</td><td>${esc(c.banco || '-')}</td><td>${esc(c.arca || '-')}</td><td>${esc(c.rentas || '-')}</td></tr>`).join('')}
+    </tbody></table></body></html>`);
+  w.document.close(); w.onload = () => { w.focus(); w.print(); };
+});
+</script>
 </body>
 </html>
