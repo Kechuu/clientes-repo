@@ -13,7 +13,7 @@
   body{background-image:radial-gradient(1100px 480px at 90% -8%,rgba(253,230,138,.45),transparent),radial-gradient(800px 400px at -5% 100%,rgba(251,191,36,.12),transparent)}
   .view:not(.hidden){animation:rise .35s ease both}
   .rise{animation:rise .55s cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(var(--i,0)*70ms)}
-  #modalVenc>div,#modalImprimir>div,#modalManual>div{animation:pop .22s ease both}
+  #modalVenc>div,#modalImprimir>div,#modalManual>div,#modalRec>div{animation:pop .22s ease both}
   .toast{animation:slidein .3s ease both}
   .next{animation:ring 2.2s infinite}
   .card-hover{transition:transform .2s,box-shadow .2s}
@@ -84,7 +84,10 @@
       <section id="v-inicio" class="view hidden space-y-6">
         <div id="hero" class="rise relative overflow-hidden rounded-2xl bg-gradient-to-br from-amber-900 via-amber-800 to-amber-600 text-white p-6 shadow-lg">
           <div class="absolute -right-10 -top-12 w-56 h-56 rounded-full bg-amber-300/25 blur-2xl"></div>
-          <button id="btnManual" class="absolute right-4 top-4 bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg text-xs font-semibold">＋ Cargar vencimiento</button>
+          <div class="absolute right-4 top-4 flex flex-wrap justify-end gap-2">
+            <button id="btnRec" class="bg-white text-amber-900 hover:bg-amber-50 px-3 py-1.5 rounded-lg text-xs font-bold shadow">🔔 ＋ Cargar recordatorio</button>
+            <button id="btnManual" class="bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg text-xs font-semibold">Fecha de vencimiento</button>
+          </div>
           <p id="heroSaludo" class="text-amber-200 text-sm"></p>
           <h2 id="heroFecha" class="text-2xl sm:text-3xl font-bold capitalize"></h2>
           <div class="flex gap-10 mt-5">
@@ -92,6 +95,7 @@
             <div><div id="heroPend" class="text-4xl font-extrabold leading-none">0</div><div class="text-xs text-amber-200 mt-1">trabajos pendientes del mes</div></div>
           </div>
         </div>
+        <div id="recordatorios"></div>
         <div id="proximos"></div>
         <div id="vencimientos" class="space-y-8"></div>
         <p class="text-[11px] text-slate-500">Tocá cualquier fecha para ver los clientes de ese grupo. Fechas calculadas por terminación de CUIT con días hábiles consecutivos. Confirmalas con el calendario oficial de ARCA; los días base y los feriados se ajustan al inicio del script (BASE y FERIADOS). Convenio Multilateral y Ganancias (sociedades) usan tablas fijas de 2026; Ingresos Brutos usa Jujuy, día 20.</p>
@@ -211,6 +215,33 @@
   </div>
 </div>
 
+<!-- MODAL RECORDATORIO -->
+<div id="modalRec" class="hidden fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-[60]">
+  <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-amber-200">
+    <h3 id="recHead" class="font-bold text-amber-900 mb-3">🔔 Cargar recordatorio</h3>
+    <form id="formRec" class="space-y-3 text-sm">
+      <div><label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Título</label>
+        <input id="recTitulo" required maxlength="80" class="w-full px-3 py-2 border border-slate-300 rounded-lg"></div>
+      <div><label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Detalle (motivo)</label>
+        <textarea id="recDetalle" rows="3" class="w-full px-3 py-2 border border-slate-300 rounded-lg"></textarea></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Fecha</label>
+          <input type="date" id="recFecha" required class="w-full px-3 py-2 border border-slate-300 rounded-lg"></div>
+        <div><label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Finaliza (opcional)</label>
+          <input type="date" id="recHasta" class="w-full px-3 py-2 border border-slate-300 rounded-lg"></div>
+      </div>
+      <p class="text-[11px] text-slate-500">Se repite cada semana, el mismo día de la semana que la fecha elegida, hasta la fecha de finalización.</p>
+      <div class="flex items-center pt-1">
+        <button type="button" id="recEliminar" class="hidden bg-rose-100 text-rose-700 px-3 py-2 rounded-lg text-xs font-semibold">Eliminar</button>
+        <div class="flex gap-2 ml-auto">
+          <button type="button" id="recCancel" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-xs font-semibold">Cancelar</button>
+          <button type="submit" class="bg-amber-800 text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-amber-900">Guardar</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- MODAL CARGAR VENCIMIENTO -->
 <div id="modalManual" class="hidden fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-[60]">
   <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-amber-200">
@@ -291,19 +322,21 @@ const CLAVE_MESTRA = "Estudio2026*";
 
 // ===== AJUSTES DE VENCIMIENTOS =====
 // Día del mes desde el que se cuentan los vencimientos (se corre al siguiente día hábil)
-const BASE = { mono: 20, iva: 18, aut: 5, f931: 10, plan: 16, iibb: 20 };
+const BASE = { mono: 20, iva: 18, aut: 5, f931: 10, plan: 16, iibb: 20, recat: 5 };
 // Tablas fijas 2026 (índice = mes 0-11, valores = días del mes). Convenio Multilateral: terminaciones 0-2, 3-5, 6-7, 8-9 (noviembre ya con la prórroga).
 const CM26 = [[15,16,19,20],[13,18,19,20],[13,16,17,18],[15,16,17,20],[15,18,19,20],[16,17,18,19],[15,16,17,20],[14,18,19,20],[15,16,17,18],[15,16,19,20],[17,18,19,20],[15,16,17,18]];
 // Ganancias sociedades (DDJJ anual, 5 meses después del cierre): terminaciones 0-3, 4-6, 7-9
 const GAN26 = [[13,14,15],[13,16,17],[13,16,17],[13,14,15],[13,14,15],[15,16,17],[13,14,15],[13,14,17],[14,15,16],[13,14,15],[13,16,17],[14,15,16]];
 const fijas = (y, m, tabla) => (y === 2026 && tabla[m]) ? tabla[m].map(d => new Date(y, m, d)) : [];
+// Recategorización semestral: vence el 5 de febrero y el 5 de agosto (se corre al siguiente día hábil)
+const recatFechas = (y, m) => (m === 1 || m === 7) ? secuencia(y, m, BASE.recat, 1) : [];
 // Personas humanas: junio (estimado: 3 días hábiles desde el 11)
 const ganFechas = (y, m) => y === 2026 ? fijas(y, m, GAN26) : m === 5 ? secuencia(y, m, 11, 3) : [];
 // Feriados (AAAA-MM-DD). Completar según el calendario oficial.
 const FERIADOS = ['2026-11-23', '2026-12-08', '2026-12-25', '2027-01-01'];
 
-const OBLIG = { mono: 'Monotributo', iva: 'IVA', aut: 'Seguridad Social · Autónomos', f931: 'Seguridad Social · Empleadores (F.931)', plan: 'Facilidades de Pago', gan: 'Ganancias', iibb: 'Ingresos Brutos', cm: 'Convenio Multilateral' };
-const SHORT = { mono: 'Monotributo', iva: 'IVA', aut: 'SS Autónomos', f931: 'SS Empleadores', plan: 'Facilidades', gan: 'Ganancias', iibb: 'Ing. Brutos', cm: 'Conv. Multilateral' };
+const OBLIG = { mono: 'Monotributo', iva: 'IVA', aut: 'Seguridad Social · Autónomos', f931: 'Seguridad Social · Empleadores (F.931)', plan: 'Facilidades de Pago', gan: 'Ganancias', iibb: 'Ingresos Brutos', cm: 'Convenio Multilateral', recat: 'Recategorización (Monotributo)', mipyme: 'Mi Pymes', cm05: 'DDJJ Anual CM05' };
+const SHORT = { mono: 'Monotributo', iva: 'IVA', aut: 'SS Autónomos', f931: 'SS Empleadores', plan: 'Facilidades', gan: 'Ganancias', iibb: 'Ing. Brutos', cm: 'Conv. Multilateral', recat: 'Recategorización', mipyme: 'Mi Pymes', cm05: 'DDJJ CM05' };
 const TAXKEY = Object.fromEntries(Object.entries(OBLIG).map(([k, v]) => [v, k]));
 const EQUIPO = ['Alba', 'Alejandra', 'Jesus', 'Conti'];
 const $ = id => document.getElementById(id);
@@ -314,7 +347,7 @@ const ahora = () => { const d = new Date(); return `${pad(d.getDate())}/${pad(d.
 const money = n => '$' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2 });
 const ordenar = a => a.sort((x, y) => (x.nombre || '').localeCompare(y.nombre || '', 'es', { sensitivity: 'base' }));
 
-let manuales = [], unsubMan = null, clientes = [], idEditando = null, idHon = null, periodos = [], unsub = null;
+let recordatorios = [], unsubRec = null, manuales = [], unsubMan = null, clientes = [], idEditando = null, idHon = null, periodos = [], unsub = null;
 
 function toast(msg, tipo = 'ok') {
   const t = document.createElement('div');
@@ -327,7 +360,7 @@ function entrar(email) {
   $('loginSection').classList.add('hidden'); $('appSection').classList.remove('hidden');
   $('userEmail').textContent = email; sessionStorage.setItem('usuarioEstudio', email);
   if (window.innerWidth < 1024) cerrarMenu();
-  suscribir(); suscribirManuales(); ir('inicio');
+  suscribir(); suscribirManuales(); suscribirRecordatorios(); ir('inicio');
 }
 $('loginForm').addEventListener('submit', e => {
   e.preventDefault();
@@ -337,7 +370,7 @@ $('loginForm').addEventListener('submit', e => {
   entrar(mail);
 });
 $('btnLogout').addEventListener('click', () => {
-  sessionStorage.removeItem('usuarioEstudio'); if (unsub) unsub(); unsub = null; clientes = []; if (unsubMan) unsubMan(); unsubMan = null; manuales = [];
+  sessionStorage.removeItem('usuarioEstudio'); if (unsub) unsub(); unsub = null; clientes = []; if (unsubMan) unsubMan(); unsubMan = null; manuales = []; if (unsubRec) unsubRec(); unsubRec = null; recordatorios = [];
   $('contenedorClientes').innerHTML = ''; $('inputPassword').value = '';
   $('appSection').classList.add('hidden'); $('loginSection').classList.remove('hidden');
 });
@@ -387,6 +420,7 @@ function vencMes(y, m) {
   add('Ganancias', ['0-3','4-6','7-9'], ganFechas(y, m));
   add('Ingresos Brutos', ['Todas'], secuencia(y, m, BASE.iibb, 1));
   add('Convenio Multilateral', ['0-2','3-5','6-7','8-9'], fijas(y, m, CM26));
+  add(OBLIG.recat, ['Todas'], recatFechas(y, m));
   const out = ev.map(e => ({ ...e, key: ymd(e.date) + e.tax + e.terms, k: TAXKEY[e.tax] })), ref = new Date(y, m, 1);
   manuales.forEach(v => {                                  // las fechas cargadas a mano reemplazan a las calculadas
     const d = new Date(v.fecha + 'T00:00:00'); if (d.getFullYear() !== ref.getFullYear() || d.getMonth() !== ref.getMonth()) return;
@@ -408,7 +442,7 @@ function renderHero() {
   contar($('heroSemana'), n); contar($('heroPend'), pendientesMes(mkey(h.getFullYear(), h.getMonth())).length);
 }
 function renderInicio() {
-  renderHero();
+  renderHero(); renderRecordatorios();
   const h = new Date(), hoy = ymd(h), meses = [0, 1].map(k => new Date(h.getFullYear(), h.getMonth() + k, 1));
   const porMes = meses.map(d => ({ d, ev: vencMes(d.getFullYear(), d.getMonth()) }));
   const todos = porMes.flatMap(x => x.ev);
@@ -603,13 +637,20 @@ $('formHonorarios').addEventListener('submit', async e => {
 // ===== OBLIGACIONES Y ESTADOS =====
 $('oblTodas').addEventListener('click', () => document.querySelectorAll('#obligBox input').forEach(x => { x.checked = true; x.closest('[data-row]').querySelector('.chips').classList.remove('hidden'); }));
 function mkey(y, m) { return `${y}_${pad(m + 1)}`; }                  // m = mes 0-11
-function skey(k, mk) { return k === 'gan' ? `gan_${mk.slice(0, 4)}` : `${k}_${mk}`; }   // Ganancias: un estado por año
+const ANUALES = ['gan', 'mipyme', 'cm05'];                              // un estado por año
+function skey(k, mk) {
+  if (k === 'recat') return `recat_${mk.slice(0, 4)}_${+mk.slice(5) <= 6 ? 1 : 2}`;   // semestral
+  return ANUALES.includes(k) ? `${k}_${mk.slice(0, 4)}` : `${k}_${mk}`;
+}
 function terminaEn(cuit, terms) {                                      // terminación = último dígito del CUIT
   const d = +String(cuit).replace(/\D/g, '').slice(-1), m = /^(\d)-(\d)$/.exec(terms);
   return !m || (d >= +m[1] && d <= +m[2]);
 }
 function periodoDefault(k, y, m) {                                     // IVA y Seg. Social: mes anterior
   if (k === 'gan') return `Año ${m >= 6 ? y : y - 1}`;
+  if (k === 'cm05') return `Año ${y - 1}`;
+  if (k === 'mipyme') return `Año ${y}`;
+  if (k === 'recat') return `${m < 6 ? 'Enero' : 'Julio'} ${y}`;
   const d = new Date(y, ['iva', 'aut', 'f931', 'iibb', 'cm'].includes(k) ? m - 1 : m, 1);
   return `${MESES[d.getMonth()]} ${d.getFullYear()}`;
 }
@@ -640,7 +681,7 @@ function renderVenc() {
   const { k, terms, mk, f } = vActual;
   $('vencTitulo').textContent = `${vActual.x || OBLIG[k]} · Term. ${terms}`; $('vencSub').textContent = `Vence ${f}${vActual.nota ? ' · ' + vActual.nota : ''}`;
   $('vencPie').innerHTML = vActual.vid ? '<button data-a="edit" class="bg-amber-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold">✎ Editar fecha</button><button data-a="del" class="bg-rose-100 text-rose-700 px-3 py-1.5 rounded-lg text-xs font-semibold">Eliminar fecha manual</button>' : '<button data-a="new" class="bg-amber-100 text-amber-900 px-3 py-1.5 rounded-lg text-xs font-semibold">✎ Fijar fecha manual</button>';
-  const l = !OBLIG[k] ? [] : ordenar(clientes.filter(c => c.estado !== 'Inactivo' && (c.obligaciones || []).includes(k) && terminaEn(c.cuit, terms)));
+  const l = !OBLIG[k] ? [] : ordenar(clientes.filter(c => c.estado !== 'Inactivo' && (c.obligaciones || []).includes(k) && aplica(c, k) && terminaEn(c.cuit, terms)));
   $('vencLista').innerHTML = l.length ? l.map(c => {
     const s = (c.estados || {})[skey(k, mk)], ok = s && s.estado === 'Finalizado';
     return `<div class="flex justify-between items-center gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs">
@@ -656,21 +697,28 @@ $('vencLista').addEventListener('click', e => { const b = e.target.closest('[dat
 function responsables(c, k) { return c.asignaciones ? (c.asignaciones[k] || []) : (c.responsable ? [c.responsable] : []); }   // compatible con el campo anterior
 function asigDe(c) { const o = {}; (c.obligaciones || []).forEach(k => o[k] = responsables(c, k)); return o; }
 function nombres(c) { return [...new Set((c.obligaciones || []).flatMap(k => responsables(c, k)))]; }
-function pertenece(c, k, q) { const rs = responsables(c, k); return q === 'Todos' || (q === 'Sin asignar' ? !rs.length : rs.includes(q)); }
+function aplica(c, k) { return k !== 'recat' || c.condicion === 'Monotributo'; }          // la recategorización es solo para monotributistas
+function esMono() { const r = document.querySelector('input[name="condicion"]:checked'); return !!r && r.value === 'Monotributo'; }
+function pertenece(c, k, q) { if (!aplica(c, k)) return false; const rs = responsables(c, k); return q === 'Todos' || (q === 'Sin asignar' ? !rs.length : rs.includes(q)); }
 const chipCls = on => `px-2 py-0.5 rounded-full text-[11px] font-semibold border transition-colors ${on ? 'bg-amber-700 text-white border-amber-700' : 'bg-white text-slate-600 border-slate-300 hover:border-amber-500'}`;
 function renderOblig(sel = {}) {
-  $('obligBox').innerHTML = Object.entries(OBLIG).map(([k, v]) => `<div data-row="${k}" class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 border-b border-amber-100 last:border-0">
+  $('obligBox').innerHTML = Object.entries(OBLIG).map(([k, v]) => `<div data-row="${k}" class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 border-b border-amber-100 last:border-0 ${k === 'recat' && !esMono() ? 'hidden' : ''}">
     <label class="flex items-center gap-2 text-sm w-64"><input type="checkbox" ${sel[k] ? 'checked' : ''}> ${v}</label>
     <div class="chips flex flex-wrap gap-1 ${sel[k] ? '' : 'hidden'}">${EQUIPO.map(n => { const on = (sel[k] || []).includes(n); return `<button type="button" data-n="${n}" data-on="${on ? 1 : 0}" class="${chipCls(on)}">${n}</button>`; }).join('')}</div></div>`).join('');
 }
 function leerOblig() {
   const ob = [], as = {};
   document.querySelectorAll('#obligBox [data-row]').forEach(r => {
-    if (!r.querySelector('input').checked) return;
+    if (!r.querySelector('input').checked || (r.dataset.row === 'recat' && !esMono())) return;
     const k = r.dataset.row; ob.push(k); as[k] = [...r.querySelectorAll('button[data-on="1"]')].map(b => b.dataset.n);
   });
   return { ob, as };
 }
+document.querySelectorAll('input[name="condicion"]').forEach(r => r.addEventListener('change', () => {   // Recategorización: solo si es Monotributo
+  const row = document.querySelector('#obligBox [data-row="recat"]'); if (!row) return;
+  row.classList.toggle('hidden', !esMono());
+  if (!esMono()) { row.querySelector('input').checked = false; row.querySelector('.chips').classList.add('hidden'); }
+}));
 $('obligBox').addEventListener('click', e => { const b = e.target.closest('button[data-n]'); if (!b) return; const on = b.dataset.on !== '1'; b.dataset.on = on ? 1 : 0; b.className = chipCls(on); });
 $('obligBox').addEventListener('change', e => { const x = e.target.closest('input'); if (x) x.closest('[data-row]').querySelector('.chips').classList.toggle('hidden', !x.checked); });
 renderOblig();
@@ -745,7 +793,7 @@ function renderEstados(forzar) {
     return solo && !hay ? '' : `<tr class="border-t border-amber-100"><td class="p-2 font-semibold">${esc(c.nombre)}<div class="font-mono text-[10px] text-slate-500">${esc(c.cuit)}</div></td>${celdas}</tr>`;
   }).join('');
   $('estTabla').innerHTML = `<thead class="bg-amber-100 text-amber-900"><tr><th class="p-2 text-left">Cliente</th>${ks.map(k => `<th class="p-2">${SHORT[k]}</th>`).join('')}</tr></thead>
-    <tbody>${filas || '<tr><td colspan="9" class="p-4 text-center text-slate-400">Sin resultados para este filtro. Tildá las obligaciones y asigná un responsable en la ficha de cada cliente.</td></tr>'}</tbody>`;
+    <tbody>${filas || '<tr><td colspan="12" class="p-4 text-center text-slate-400">Sin resultados para este filtro. Tildá las obligaciones y asigná un responsable en la ficha de cada cliente.</td></tr>'}</tbody>`;
 }
 $('estMes').addEventListener('change', () => renderEstados(true)); $('estPend').addEventListener('change', () => renderEstados(true));
 $('estEquipo').addEventListener('click', e => {
@@ -774,7 +822,7 @@ function hablar(txt) {
 }
 function pendientesMes(mk) {
   const out = [];
-  clientes.filter(c => c.estado !== 'Inactivo').forEach(c => (c.obligaciones || []).forEach(k => { const s = (c.estados || {})[skey(k, mk)]; if (!s || s.estado !== 'Finalizado') out.push({ c, k }); }));
+  clientes.filter(c => c.estado !== 'Inactivo').forEach(c => (c.obligaciones || []).forEach(k => { if (!aplica(c, k)) return; const s = (c.estados || {})[skey(k, mk)]; if (!s || s.estado !== 'Finalizado') out.push({ c, k }); }));
   return out;
 }
 function responder(q) {
@@ -801,7 +849,7 @@ function responder(q) {
   }
   if (/resumen|hoy|buen|hola|novedad|vence/.test(t)) {
     const hh = ev.filter(e => ymd(e.date) === hoy), p = pendientesMes(mk).length;
-    return `Hoy es ${largo(h)}. ` + (hh.length ? 'Vencen hoy: ' + hh.map(e => `${SHORT[e.k]} terminaciones ${e.terms}`).join(', ') + '. ' : 'No hay vencimientos hoy. ') +
+    return `Hoy es ${largo(h)}. ` + (recordatoriosActivos(h).length ? 'Recordatorios: ' + recordatoriosActivos(h).map(x => x.r.titulo).join(', ') + '. ' : '') + (hh.length ? 'Vencen hoy: ' + hh.map(e => `${SHORT[e.k]} terminaciones ${e.terms}`).join(', ') + '. ' : 'No hay vencimientos hoy. ') +
       (ev[0] ? `El próximo es ${SHORT[ev[0].k]}, terminaciones ${ev[0].terms}, el ${largo(ev[0].date)}. ` : '') + `Trabajos pendientes este mes: ${p}.`;
   }
   return 'No entendí. Podés pedirme el resumen, los pendientes, el vencimiento de IVA o Monotributo, o buscar un cliente.';
@@ -861,6 +909,60 @@ $('vencPie').addEventListener('click', async e => {
     try { await deleteDoc(doc(db, 'vencimientos', m.id)); toast('Fecha manual eliminada.'); $('modalVenc').classList.add('hidden'); vActual = null; }
     catch (err) { console.error(err); toast('No se pudo eliminar.', 'error'); }
   }
+});
+
+// ===== RECORDATORIOS SEMANALES (prioridad en Inicio) =====
+function suscribirRecordatorios() {
+  unsubRec = onSnapshot(collection(db, 'recordatorios'), snap => {
+    recordatorios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (!$('v-inicio').classList.contains('hidden')) renderRecordatorios();
+  }, err => console.error('recordatorios', err));
+}
+function proxima(r, desde) {                          // próxima fecha >= desde con el mismo día de la semana; null si ya terminó
+  const ini = new Date(r.fecha + 'T00:00:00'), fin = r.hasta ? new Date(r.hasta + 'T00:00:00') : null;
+  const d = new Date(Math.max(+ini, +desde)); d.setDate(d.getDate() + (ini.getDay() - d.getDay() + 7) % 7);
+  return fin && d > fin ? null : d;
+}
+function recordatoriosActivos(h) {                    // los que tocan hoy o en los próximos 7 días
+  const hoy0 = new Date(h.getFullYear(), h.getMonth(), h.getDate());
+  return recordatorios.map(r => ({ r, d: proxima(r, hoy0) })).filter(x => x.d && (x.d - hoy0) / 864e5 <= 7).sort((a, b) => a.d - b.d);
+}
+function renderRecordatorios() {
+  const h = new Date(), hoy = ymd(h), l = recordatoriosActivos(h);
+  const largoF = d => d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+  $('recordatorios').innerHTML = !l.length ? '' : `<div class="space-y-2"><h2 class="text-xs font-bold uppercase tracking-wider text-rose-700">🔔 Recordatorios · prioridad</h2>` + l.map(({ r, d }, i) => {
+    const esHoy = ymd(d) === hoy, ini = new Date(r.fecha + 'T00:00:00');
+    return `<button data-rid="${r.id}" style="--i:${i}" class="rise card-hover w-full text-left rounded-xl border border-amber-200 border-l-4 shadow-sm p-4 ${esHoy ? 'border-l-rose-500 bg-rose-50 next' : 'border-l-amber-500 bg-white'}">
+      <div class="flex justify-between gap-3 items-start">
+        <div><div class="font-bold text-slate-800">${esc(r.titulo)}</div>${r.detalle ? `<div class="text-sm text-slate-600 mt-0.5">${esc(r.detalle)}</div>` : ''}</div>
+        <div class="text-right text-xs shrink-0"><div class="font-bold capitalize ${esHoy ? 'text-rose-700' : 'text-amber-800'}">${esHoy ? '¡Hoy!' : largoF(d)}</div>
+          <div class="text-slate-500">cada ${ini.toLocaleDateString('es-AR', { weekday: 'long' })}${r.hasta ? ' · hasta ' + r.hasta.split('-').reverse().join('/') : ''}</div></div>
+      </div></button>`;
+  }).join('') + '</div>';
+}
+let recEdit = null;
+function abrirRec(r) {
+  r = r || {}; recEdit = r.id || null;
+  $('recHead').textContent = recEdit ? '🔔 Editar recordatorio' : '🔔 Cargar recordatorio';
+  $('recTitulo').value = r.titulo || ''; $('recDetalle').value = r.detalle || ''; $('recFecha').value = r.fecha || ymd(new Date()); $('recHasta').value = r.hasta || '';
+  $('recEliminar').classList.toggle('hidden', !recEdit); $('modalRec').classList.remove('hidden'); $('recTitulo').focus();
+}
+$('btnRec').addEventListener('click', () => abrirRec());
+$('recCancel').addEventListener('click', () => $('modalRec').classList.add('hidden'));
+$('recordatorios').addEventListener('click', e => { const b = e.target.closest('[data-rid]'); if (b) abrirRec(recordatorios.find(r => r.id === b.dataset.rid)); });
+$('formRec').addEventListener('submit', async e => {
+  e.preventDefault();
+  const d = { titulo: $('recTitulo').value.trim(), detalle: $('recDetalle').value.trim(), fecha: $('recFecha').value, hasta: $('recHasta').value };
+  if (d.hasta && d.hasta < d.fecha) return toast('La fecha de finalización no puede ser anterior a la fecha de inicio.', 'error');
+  try {
+    if (recEdit) await updateDoc(doc(db, 'recordatorios', recEdit), d); else await addDoc(collection(db, 'recordatorios'), d);
+    toast('Recordatorio guardado.'); $('modalRec').classList.add('hidden');
+  } catch (err) { console.error(err); toast('No se pudo guardar el recordatorio.', 'error'); }
+});
+$('recEliminar').addEventListener('click', async () => {
+  if (!recEdit || !confirm('¿Eliminar este recordatorio?')) return;
+  try { await deleteDoc(doc(db, 'recordatorios', recEdit)); toast('Recordatorio eliminado.'); $('modalRec').classList.add('hidden'); }
+  catch (err) { console.error(err); toast('No se pudo eliminar.', 'error'); }
 });
 
 // ===== IMPRESIÓN =====
