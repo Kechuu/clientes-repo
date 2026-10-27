@@ -13,7 +13,7 @@
   body{background-image:radial-gradient(1100px 480px at 90% -8%,rgba(253,230,138,.45),transparent),radial-gradient(800px 400px at -5% 100%,rgba(251,191,36,.12),transparent)}
   .view:not(.hidden){animation:rise .35s ease both}
   .rise{animation:rise .55s cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(var(--i,0)*70ms)}
-  #modalVenc>div,#modalImprimir>div,#modalManual>div,#modalRec>div{animation:pop .22s ease both}
+  #modalVenc>div,#modalImprimir>div,#modalManual>div,#modalRec>div,#modalRecLista>div{animation:pop .22s ease both}
   .toast{animation:slidein .3s ease both}
   .next{animation:ring 2.2s infinite}
   .card-hover{transition:transform .2s,box-shadow .2s}
@@ -57,6 +57,7 @@
       <button data-v="clientes" class="nav w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-amber-800">🔍 Buscar cliente</button>
       <button data-v="honorarios" class="nav w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-amber-800">💰 Cargar honorarios</button>
       <button data-v="estados" class="nav w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-amber-800">📋 Estado de trabajos</button>
+      <button data-v="tareas" class="nav w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-amber-800">📌 Tareas Extras</button>
     </nav>
     <button id="btnLogout" class="m-2 px-3 py-2 rounded-lg text-sm bg-amber-900 hover:bg-amber-800 text-left">⎋ Cerrar sesión</button>
   </aside>
@@ -86,7 +87,6 @@
           <div class="absolute -right-10 -top-12 w-56 h-56 rounded-full bg-amber-300/25 blur-2xl"></div>
           <div class="absolute right-4 top-4 flex flex-wrap justify-end gap-2">
             <button id="btnRec" class="bg-white text-amber-900 hover:bg-amber-50 px-3 py-1.5 rounded-lg text-xs font-bold shadow">🔔 ＋ Cargar recordatorio</button>
-            <button id="btnManual" class="bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg text-xs font-semibold">Fecha de vencimiento</button>
           </div>
           <p id="heroSaludo" class="text-amber-200 text-sm"></p>
           <h2 id="heroFecha" class="text-2xl sm:text-3xl font-bold capitalize"></h2>
@@ -209,9 +209,34 @@
         <div id="estEquipo" class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4"></div>
         <div class="h-3 bg-amber-100 rounded-full overflow-hidden mb-3"><div id="estBar" class="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-700" style="width:0"></div></div>
         <div id="estMsg"></div>
-        <div class="bg-white rounded-xl border border-amber-200 overflow-x-auto"><table id="estTabla" class="w-full text-xs"></table></div>
+        <div class="bg-white rounded-xl border border-amber-200 overflow-auto max-h-[72vh]"><table id="estTabla" class="w-full text-xs"></table></div>
+      </section>
+
+      <!-- TAREAS EXTRAS -->
+      <section id="v-tareas" class="view hidden">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4 bg-white p-4 rounded-xl border border-amber-200">
+          <div id="tarQuien" class="flex flex-wrap gap-2"></div>
+          <button id="btnRec2" class="bg-amber-700 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-amber-800">＋ Nueva tarea / recordatorio</button>
+        </div>
+        <div id="tarLista" class="space-y-5"></div>
+        <details class="mt-6 bg-white rounded-xl border border-amber-200 p-4">
+          <summary id="tarFinTit" class="cursor-pointer text-sm font-bold text-amber-900">✓ Finalizadas (historial)</summary>
+          <div id="tarFin" class="mt-3 space-y-2"></div>
+        </details>
       </section>
     </main>
+  </div>
+</div>
+
+<!-- MODAL LISTA DE RECORDATORIOS POR EMPLEADO -->
+<div id="modalRecLista" class="hidden fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50">
+  <div class="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-amber-200 max-h-[85vh] flex flex-col">
+    <div class="flex justify-between items-start border-b pb-3 mb-3">
+      <div><h3 id="rlTitulo" class="font-bold text-amber-900"></h3><p id="rlSub" class="text-xs text-slate-500"></p></div>
+      <button id="rlCerrar" class="text-slate-400 hover:text-slate-600 font-bold text-lg">✕</button>
+    </div>
+    <div id="rlLista" class="overflow-y-auto space-y-2"></div>
+    <div class="flex justify-end border-t pt-3 mt-3"><button id="rlNuevo" class="bg-amber-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-amber-800"></button></div>
   </div>
 </div>
 
@@ -224,6 +249,8 @@
         <input id="recTitulo" required maxlength="80" class="w-full px-3 py-2 border border-slate-300 rounded-lg"></div>
       <div><label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Detalle (motivo)</label>
         <textarea id="recDetalle" rows="3" class="w-full px-3 py-2 border border-slate-300 rounded-lg"></textarea></div>
+      <div><label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Asignar a</label>
+        <div id="recAsig" class="flex flex-wrap gap-1.5"></div></div>
       <div class="grid grid-cols-2 gap-3">
         <div><label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Fecha</label>
           <input type="date" id="recFecha" required class="w-full px-3 py-2 border border-slate-300 rounded-lg"></div>
@@ -306,7 +333,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
-import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, arrayUnion, deleteField } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, arrayUnion, deleteField, writeBatch } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
 const db = getFirestore(initializeApp({
   apiKey: "AIzaSyBMr9S5Hx8KhZto1K-TM1tqdpoShb8Cd5I",
@@ -335,8 +362,8 @@ const ganFechas = (y, m) => y === 2026 ? fijas(y, m, GAN26) : m === 5 ? secuenci
 // Feriados (AAAA-MM-DD). Completar según el calendario oficial.
 const FERIADOS = ['2026-11-23', '2026-12-08', '2026-12-25', '2027-01-01'];
 
-const OBLIG = { mono: 'Monotributo', iva: 'IVA', aut: 'Seguridad Social · Autónomos', f931: 'Seguridad Social · Empleadores (F.931)', plan: 'Facilidades de Pago', gan: 'Ganancias', iibb: 'Ingresos Brutos', cm: 'Convenio Multilateral', recat: 'Recategorización (Monotributo)', mipyme: 'Mi Pymes', cm05: 'DDJJ Anual CM05' };
-const SHORT = { mono: 'Monotributo', iva: 'IVA', aut: 'SS Autónomos', f931: 'SS Empleadores', plan: 'Facilidades', gan: 'Ganancias', iibb: 'Ing. Brutos', cm: 'Conv. Multilateral', recat: 'Recategorización', mipyme: 'Mi Pymes', cm05: 'DDJJ CM05' };
+const OBLIG = { mono: 'Monotributo', iva: 'IVA', aut: 'Seguridad Social · Autónomos', f931: 'Seguridad Social · Empleadores (F.931)', plan: 'Facilidades de Pago', gan: 'Ganancias', iibb: 'Ingresos Brutos', cm: 'Convenio Multilateral', recat: 'Recategorización (Monotributo)', mipyme: 'Mi Pymes', cm05: 'DDJJ Anual CM05', anticipo: 'Anticipo a las Ganancias', bp: 'Bienes Personales' };
+const SHORT = { mono: 'Monotributo', iva: 'IVA', aut: 'SS Autónomos', f931: 'SS Empleadores', plan: 'Facilidades', gan: 'Ganancias', iibb: 'Ing. Brutos', cm: 'Conv. Multilateral', recat: 'Recategorización', mipyme: 'Mi Pymes', cm05: 'DDJJ CM05', anticipo: 'Anticipo Gcias.', bp: 'Bs. Personales' };
 const TAXKEY = Object.fromEntries(Object.entries(OBLIG).map(([k, v]) => [v, k]));
 const EQUIPO = ['Alba', 'Alejandra', 'Jesus', 'Conti'];
 const $ = id => document.getElementById(id);
@@ -347,7 +374,7 @@ const ahora = () => { const d = new Date(); return `${pad(d.getDate())}/${pad(d.
 const money = n => '$' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2 });
 const ordenar = a => a.sort((x, y) => (x.nombre || '').localeCompare(y.nombre || '', 'es', { sensitivity: 'base' }));
 
-let recordatorios = [], unsubRec = null, manuales = [], unsubMan = null, clientes = [], idEditando = null, idHon = null, periodos = [], unsub = null;
+let finalizadas = [], unsubFin = null, recordatorios = [], unsubRec = null, manuales = [], unsubMan = null, clientes = [], idEditando = null, idHon = null, periodos = [], unsub = null;
 
 function toast(msg, tipo = 'ok') {
   const t = document.createElement('div');
@@ -360,7 +387,7 @@ function entrar(email) {
   $('loginSection').classList.add('hidden'); $('appSection').classList.remove('hidden');
   $('userEmail').textContent = email; sessionStorage.setItem('usuarioEstudio', email);
   if (window.innerWidth < 1024) cerrarMenu();
-  suscribir(); suscribirManuales(); suscribirRecordatorios(); ir('inicio');
+  suscribir(); suscribirManuales(); suscribirRecordatorios(); suscribirFinalizadas(); ir('inicio');
 }
 $('loginForm').addEventListener('submit', e => {
   e.preventDefault();
@@ -370,7 +397,7 @@ $('loginForm').addEventListener('submit', e => {
   entrar(mail);
 });
 $('btnLogout').addEventListener('click', () => {
-  sessionStorage.removeItem('usuarioEstudio'); if (unsub) unsub(); unsub = null; clientes = []; if (unsubMan) unsubMan(); unsubMan = null; manuales = []; if (unsubRec) unsubRec(); unsubRec = null; recordatorios = [];
+  sessionStorage.removeItem('usuarioEstudio'); if (unsub) unsub(); unsub = null; clientes = []; if (unsubMan) unsubMan(); unsubMan = null; manuales = []; if (unsubRec) unsubRec(); unsubRec = null; recordatorios = []; if (unsubFin) unsubFin(); unsubFin = null; finalizadas = [];
   $('contenedorClientes').innerHTML = ''; $('inputPassword').value = '';
   $('appSection').classList.add('hidden'); $('loginSection').classList.remove('hidden');
 });
@@ -378,7 +405,7 @@ const guardado = sessionStorage.getItem('usuarioEstudio');
 if (guardado && CORREOS_AUTORIZADOS.includes(guardado)) entrar(guardado);
 
 // ===== MENÚ LATERAL =====
-const TITULOS = { inicio: 'Inicio · Vencimientos', clientes: 'Buscar cliente', honorarios: 'Cargar honorarios', estados: 'Estado de trabajos' };
+const TITULOS = { inicio: 'Inicio · Vencimientos', clientes: 'Buscar cliente', honorarios: 'Cargar honorarios', estados: 'Estado de trabajos', tareas: 'Tareas extras' };
 let menuAbierto = window.innerWidth >= 1024;
 function aplicarMenu() {
   $('side').classList.toggle('-translate-x-full', !menuAbierto);
@@ -396,6 +423,7 @@ function ir(v) {
   document.querySelectorAll('.nav').forEach(b => b.classList.toggle('bg-amber-700', b.dataset.v === v));
   if (v === 'inicio') renderInicio();
   if (v === 'estados') renderEstados(true);
+  if (v === 'tareas') renderTareas();
   if (v === 'honorarios') { llenarLista(); $('honCliente').focus(); }
   if (window.innerWidth < 1024) cerrarMenu(); else aplicarMenu();
 }
@@ -637,7 +665,7 @@ $('formHonorarios').addEventListener('submit', async e => {
 // ===== OBLIGACIONES Y ESTADOS =====
 $('oblTodas').addEventListener('click', () => document.querySelectorAll('#obligBox input').forEach(x => { x.checked = true; x.closest('[data-row]').querySelector('.chips').classList.remove('hidden'); }));
 function mkey(y, m) { return `${y}_${pad(m + 1)}`; }                  // m = mes 0-11
-const ANUALES = ['gan', 'mipyme', 'cm05'];                              // un estado por año
+const ANUALES = ['gan', 'mipyme', 'cm05', 'bp'];                              // un estado por año
 function skey(k, mk) {
   if (k === 'recat') return `recat_${mk.slice(0, 4)}_${+mk.slice(5) <= 6 ? 1 : 2}`;   // semestral
   return ANUALES.includes(k) ? `${k}_${mk.slice(0, 4)}` : `${k}_${mk}`;
@@ -647,7 +675,7 @@ function terminaEn(cuit, terms) {                                      // termin
   return !m || (d >= +m[1] && d <= +m[2]);
 }
 function periodoDefault(k, y, m) {                                     // IVA y Seg. Social: mes anterior
-  if (k === 'gan') return `Año ${m >= 6 ? y : y - 1}`;
+  if (k === 'gan' || k === 'bp') return `Año ${m >= 6 ? y : y - 1}`;
   if (k === 'cm05') return `Año ${y - 1}`;
   if (k === 'mipyme') return `Año ${y}`;
   if (k === 'recat') return `${m < 6 ? 'Enero' : 'Julio'} ${y}`;
@@ -790,10 +818,10 @@ function renderEstados(forzar) {
       const nota = ok || !ev ? '' : `<div class="text-[10px] ${ymd(ev.date) < hoy ? 'text-rose-600 font-semibold' : 'text-slate-400'}">vence ${pad(ev.date.getDate())}/${pad(ev.date.getMonth() + 1)}</div>`;
       return `<td class="p-1.5 text-center"><button data-id="${c.id}" data-k="${k}" class="w-full px-2 py-1 rounded-md font-semibold ${ok ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-700'}">${ok ? 'Finalizado · ' + esc(s.periodo) : 'No se hizo'}</button>${nota}${resp}</td>`;
     }).join('');
-    return solo && !hay ? '' : `<tr class="border-t border-amber-100"><td class="p-2 font-semibold">${esc(c.nombre)}<div class="font-mono text-[10px] text-slate-500">${esc(c.cuit)}</div></td>${celdas}</tr>`;
+    return solo && !hay ? '' : `<tr class="border-t border-amber-100"><td class="p-2 font-semibold sticky left-0 z-[5] bg-white min-w-[170px] shadow-[1px_0_0_0_#fde68a]">${esc(c.nombre)}<div class="font-mono text-[10px] text-slate-500">${esc(c.cuit)}</div></td>${celdas}</tr>`;
   }).join('');
-  $('estTabla').innerHTML = `<thead class="bg-amber-100 text-amber-900"><tr><th class="p-2 text-left">Cliente</th>${ks.map(k => `<th class="p-2">${SHORT[k]}</th>`).join('')}</tr></thead>
-    <tbody>${filas || '<tr><td colspan="12" class="p-4 text-center text-slate-400">Sin resultados para este filtro. Tildá las obligaciones y asigná un responsable en la ficha de cada cliente.</td></tr>'}</tbody>`;
+  $('estTabla').innerHTML = `<thead><tr><th class="p-2 text-left sticky top-0 left-0 z-20 bg-amber-100 text-amber-900 min-w-[170px]">Cliente</th>${ks.map(k => `<th class="p-2 sticky top-0 z-10 bg-amber-100 text-amber-900 min-w-[125px] shadow-[0_1px_0_0_#fcd34d]">${SHORT[k]}</th>`).join('')}</tr></thead>
+    <tbody>${filas || '<tr><td colspan="14" class="p-4 text-center text-slate-400">Sin resultados para este filtro. Tildá las obligaciones y asigná un responsable en la ficha de cada cliente.</td></tr>'}</tbody>`;
 }
 $('estMes').addEventListener('change', () => renderEstados(true)); $('estPend').addEventListener('change', () => renderEstados(true));
 $('estEquipo').addEventListener('click', e => {
@@ -842,7 +870,7 @@ function responder(q) {
     const p = pendientesMes(mk); if (!p.length) return 'No hay trabajos pendientes este mes.';
     return `Hay ${p.length} trabajos pendientes en ${MESES[h.getMonth()]}. ` + p.slice(0, 5).map(x => `${x.c.nombre}: ${SHORT[x.k]}`).join('. ') + (p.length > 5 ? `. Y ${p.length - 5} más.` : '.');
   }
-  const k = /ganancia/.test(t) ? 'gan' : /convenio|multilateral/.test(t) ? 'cm' : /ingresos brutos|iibb/.test(t) ? 'iibb' : /autonom/.test(t) ? 'aut' : /empleador|931|seguridad|cargas/.test(t) ? 'f931' : /monotrib/.test(t) ? 'mono' : /\biva\b/.test(t) ? 'iva' : /facilidad|plan de pago/.test(t) ? 'plan' : null;
+  const k = /anticipo/.test(t) ? 'anticipo' : /bienes personales/.test(t) ? 'bp' : /ganancia/.test(t) ? 'gan' : /convenio|multilateral/.test(t) ? 'cm' : /ingresos brutos|iibb/.test(t) ? 'iibb' : /autonom/.test(t) ? 'aut' : /empleador|931|seguridad|cargas/.test(t) ? 'f931' : /monotrib/.test(t) ? 'mono' : /\biva\b/.test(t) ? 'iva' : /facilidad|plan de pago/.test(t) ? 'plan' : null;
   if (k) {
     const e = ev.find(x => x.k === k); if (!e) return 'No encuentro un próximo vencimiento.';
     return `El próximo vencimiento de ${OBLIG[k]} es el ${largo(e.date)}, terminaciones ${e.terms}. Tenés ${act.filter(c => (c.obligaciones || []).includes(k) && terminaEn(c.cuit, e.terms)).length} clientes en ese grupo.`;
@@ -884,7 +912,6 @@ function abrirManual(v) {
   $('modalManual').classList.remove('hidden');
 }
 let manEdit = null;
-$('btnManual').addEventListener('click', () => abrirManual());
 $('manCancel').addEventListener('click', () => $('modalManual').classList.add('hidden'));
 $('formManual').addEventListener('submit', async e => {
   e.preventDefault();
@@ -911,48 +938,133 @@ $('vencPie').addEventListener('click', async e => {
   }
 });
 
-// ===== RECORDATORIOS SEMANALES (prioridad en Inicio) =====
+// ===== RECORDATORIOS / TAREAS EXTRAS (por empleado) =====
 function suscribirRecordatorios() {
   unsubRec = onSnapshot(collection(db, 'recordatorios'), snap => {
     recordatorios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    if (!$('v-inicio').classList.contains('hidden')) renderRecordatorios();
+    refrescarRec();
   }, err => console.error('recordatorios', err));
+}
+function suscribirFinalizadas() {
+  unsubFin = onSnapshot(collection(db, 'tareas_finalizadas'), snap => {
+    finalizadas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (!$('v-tareas').classList.contains('hidden')) renderTareas();
+  }, err => console.error('tareas_finalizadas', err));
 }
 function proxima(r, desde) {                          // próxima fecha >= desde con el mismo día de la semana; null si ya terminó
   const ini = new Date(r.fecha + 'T00:00:00'), fin = r.hasta ? new Date(r.hasta + 'T00:00:00') : null;
   const d = new Date(Math.max(+ini, +desde)); d.setDate(d.getDate() + (ini.getDay() - d.getDay() + 7) % 7);
   return fin && d > fin ? null : d;
 }
-function recordatoriosActivos(h) {                    // los que tocan hoy o en los próximos 7 días
-  const hoy0 = new Date(h.getFullYear(), h.getMonth(), h.getDate());
-  return recordatorios.map(r => ({ r, d: proxima(r, hoy0) })).filter(x => x.d && (x.d - hoy0) / 864e5 <= 7).sort((a, b) => a.d - b.d);
+function hoy0() { const h = new Date(); return new Date(h.getFullYear(), h.getMonth(), h.getDate()); }
+function proxHoy(r) { return proxima(r, hoy0()); }
+function recordatoriosActivos(h) {                    // los que tocan hoy o en los próximos 7 días (para Aleja)
+  const h0 = new Date(h.getFullYear(), h.getMonth(), h.getDate());
+  return recordatorios.map(r => ({ r, d: proxima(r, h0) })).filter(x => x.d && (x.d - h0) / 864e5 <= 7).sort((a, b) => a.d - b.d);
 }
+function recDe(q) {
+  return recordatorios.filter(r => { const as = r.asignados || []; return q === 'Todos' || (q === 'Sin asignar' ? !as.length : as.includes(q)); });
+}
+const porFecha = (a, b) => (a.d ? +a.d : 9e15) - (b.d ? +b.d : 9e15);
+const fmtDMA = f => f.split('-').reverse().join('/');
+function itemRec(r, d) {
+  const esHoy = d && ymd(d) === ymd(new Date()), ini = new Date(r.fecha + 'T00:00:00'), as = r.asignados || [];
+  const cuando = d ? (esHoy ? '¡Hoy!' : d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })) : 'Terminó el ' + fmtDMA(r.hasta);
+  return `<div class="rounded-xl border border-amber-200 border-l-4 p-3 ${esHoy ? 'border-l-rose-500 bg-rose-50' : d ? 'border-l-amber-500 bg-white' : 'border-l-slate-300 bg-slate-50'}">
+    <div class="flex justify-between gap-3">
+      <div class="min-w-0"><div class="font-bold text-slate-800">${esc(r.titulo)}</div>${r.detalle ? `<div class="text-sm text-slate-600 mt-0.5">${esc(r.detalle)}</div>` : ''}
+        <div class="text-[11px] text-slate-500 mt-1">👤 ${as.length ? as.map(esc).join(', ') : 'Sin asignar'} · cada ${ini.toLocaleDateString('es-AR', { weekday: 'long' })}${r.hasta ? ' · hasta ' + fmtDMA(r.hasta) : ''}</div></div>
+      <div class="text-right shrink-0"><div class="text-xs font-bold capitalize ${esHoy ? 'text-rose-700' : 'text-amber-800'}">${cuando}</div>
+        <div class="flex gap-1 mt-2 justify-end"><button data-act="edit" data-rid="${r.id}" class="bg-slate-200 text-slate-700 px-2 py-1 rounded-md text-xs">✎</button>
+        <button data-act="fin" data-rid="${r.id}" class="bg-emerald-700 text-white px-2 py-1 rounded-md text-xs font-semibold hover:bg-emerald-800">✓ Finalizado</button></div></div>
+    </div></div>`;
+}
+function accionRec(e) {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const r = recordatorios.find(x => x.id === b.dataset.rid); if (!r) return;
+  if (b.dataset.act === 'edit') abrirRec(r); else finalizarRec(r);
+}
+async function finalizarRec(r) {                      // pasa el recordatorio al historial (otra colección) de forma atómica
+  if (!confirm(`¿Marcar "${r.titulo}" como finalizado? Pasa al historial de tareas finalizadas.`)) return;
+  try {
+    const { id, ...datos } = r, b = writeBatch(db);
+    b.set(doc(collection(db, 'tareas_finalizadas')), { ...datos, finalizadoEn: ahora(), finalizadoTs: Date.now(), finalizadoPor: $('userEmail').textContent });
+    b.delete(doc(db, 'recordatorios', id)); await b.commit();
+    toast('Finalizado. Quedó guardado en el historial.');
+  } catch (err) { console.error(err); toast('No se pudo finalizar el recordatorio.', 'error'); }
+}
+function refrescarRec() {
+  if (!$('v-inicio').classList.contains('hidden')) renderRecordatorios();
+  if (!$('v-tareas').classList.contains('hidden')) renderTareas();
+  renderRL();
+}
+
+// Inicio: una tarjeta por empleado
 function renderRecordatorios() {
-  const h = new Date(), hoy = ymd(h), l = recordatoriosActivos(h);
-  const largoF = d => d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
-  $('recordatorios').innerHTML = !l.length ? '' : `<div class="space-y-2"><h2 class="text-xs font-bold uppercase tracking-wider text-rose-700">🔔 Recordatorios · prioridad</h2>` + l.map(({ r, d }, i) => {
-    const esHoy = ymd(d) === hoy, ini = new Date(r.fecha + 'T00:00:00');
-    return `<button data-rid="${r.id}" style="--i:${i}" class="rise card-hover w-full text-left rounded-xl border border-amber-200 border-l-4 shadow-sm p-4 ${esHoy ? 'border-l-rose-500 bg-rose-50 next' : 'border-l-amber-500 bg-white'}">
-      <div class="flex justify-between gap-3 items-start">
-        <div><div class="font-bold text-slate-800">${esc(r.titulo)}</div>${r.detalle ? `<div class="text-sm text-slate-600 mt-0.5">${esc(r.detalle)}</div>` : ''}</div>
-        <div class="text-right text-xs shrink-0"><div class="font-bold capitalize ${esHoy ? 'text-rose-700' : 'text-amber-800'}">${esHoy ? '¡Hoy!' : largoF(d)}</div>
-          <div class="text-slate-500">cada ${ini.toLocaleDateString('es-AR', { weekday: 'long' })}${r.hasta ? ' · hasta ' + r.hasta.split('-').reverse().join('/') : ''}</div></div>
-      </div></button>`;
-  }).join('') + '</div>';
+  const hoy = ymd(new Date());
+  const cards = [...EQUIPO, 'Sin asignar'].map((q, i) => {
+    const l = recDe(q).map(r => ({ r, d: proxHoy(r) })).filter(x => x.d);
+    if (q === 'Sin asignar' && !l.length) return '';
+    const h = l.filter(x => ymd(x.d) === hoy).length;
+    return `<button data-q="${q}" style="--i:${i}" class="rise card-hover text-left rounded-xl border p-3 ${h ? 'border-rose-300 bg-rose-50 next' : 'border-amber-200 bg-white'}">
+      <div class="flex items-center justify-between"><span class="font-bold text-sm text-slate-800">👤 ${q}</span><span class="text-xl font-extrabold ${l.length ? 'text-amber-800' : 'text-slate-300'}">${l.length}</span></div>
+      <div class="text-[11px] mt-0.5 ${h ? 'text-rose-700 font-semibold' : 'text-slate-500'}">${h ? h + ' para hoy' : l.length ? 'recordatorios activos' : 'sin recordatorios'}</div></button>`;
+  }).join('');
+  $('recordatorios').innerHTML = `<div class="space-y-2"><h2 class="text-xs font-bold uppercase tracking-wider text-rose-700">🔔 Recordatorios · prioridad</h2><div class="grid grid-cols-2 md:grid-cols-5 gap-3">${cards}</div></div>`;
 }
+let rlQuien = null;
+$('recordatorios').addEventListener('click', e => { const b = e.target.closest('[data-q]'); if (b) { rlQuien = b.dataset.q; $('modalRecLista').classList.remove('hidden'); renderRL(); } });
+$('rlCerrar').addEventListener('click', () => { $('modalRecLista').classList.add('hidden'); rlQuien = null; });
+$('rlLista').addEventListener('click', accionRec);
+$('rlNuevo').addEventListener('click', () => abrirRec(rlQuien && rlQuien !== 'Sin asignar' ? { asignados: [rlQuien] } : undefined));
+function renderRL() {
+  if (!rlQuien) return;
+  const l = recDe(rlQuien).map(r => ({ r, d: proxHoy(r) })).sort(porFecha);
+  $('rlTitulo').textContent = `🔔 Recordatorios · ${rlQuien}`; $('rlSub').textContent = `${l.length} pendiente${l.length === 1 ? '' : 's'}`;
+  $('rlNuevo').textContent = rlQuien === 'Sin asignar' ? '＋ Nuevo' : `＋ Nuevo para ${rlQuien}`;
+  $('rlLista').innerHTML = l.length ? l.map(x => itemRec(x.r, x.d)).join('') : '<p class="text-sm text-slate-500 italic py-3">Sin recordatorios pendientes. ¡Todo al día! 🎉</p>';
+}
+
+// Menú: Tareas Extras
+let tarQuien = estQuien;
+function renderTareas() {
+  const q = tarQuien, grupos = q === 'Todos' ? [...EQUIPO, 'Sin asignar'] : [q];
+  $('tarQuien').innerHTML = ['Todos', ...EQUIPO, 'Sin asignar'].map(n => `<button data-q="${n}" class="${chipCls(n === q)}">${n} · ${recDe(n).length}</button>`).join('');
+  const bloques = grupos.map(g => {
+    const l = recDe(g).map(r => ({ r, d: proxHoy(r) })).sort(porFecha);
+    if (!l.length && q === 'Todos') return '';
+    return `<div><h3 class="font-bold text-amber-900 text-sm mb-2">👤 ${g} <span class="text-xs font-normal text-slate-500">(${l.length})</span></h3><div class="space-y-2">${l.length ? l.map(x => itemRec(x.r, x.d)).join('') : '<p class="text-sm text-slate-500 italic">Sin tareas pendientes. ¡Todo al día! 🎉</p>'}</div></div>`;
+  }).join('');
+  $('tarLista').innerHTML = bloques || '<p class="text-sm text-slate-500 italic">No hay tareas ni recordatorios cargados.</p>';
+  const f = finalizadas.filter(x => { const as = x.asignados || []; return q === 'Todos' || (q === 'Sin asignar' ? !as.length : as.includes(q)); }).sort((a, b) => (b.finalizadoTs || 0) - (a.finalizadoTs || 0));
+  $('tarFinTit').textContent = `✓ Finalizadas (historial) · ${f.length}`;
+  $('tarFin').innerHTML = f.length ? f.slice(0, 40).map(x => `<div class="flex justify-between gap-3 bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs">
+    <div><div class="font-semibold text-slate-700">${esc(x.titulo)}</div>${x.detalle ? `<div class="text-slate-500">${esc(x.detalle)}</div>` : ''}<div class="text-[10px] text-slate-400 mt-0.5">👤 ${(x.asignados || []).length ? x.asignados.map(esc).join(', ') : 'Sin asignar'}</div></div>
+    <div class="text-right text-emerald-700 font-semibold shrink-0">✓ ${esc(x.finalizadoEn || '')}</div></div>`).join('') : '<p class="text-xs text-slate-400 italic">Todavía no hay tareas finalizadas.</p>';
+}
+$('tarQuien').addEventListener('click', e => { const b = e.target.closest('[data-q]'); if (b) { tarQuien = b.dataset.q; renderTareas(); } });
+$('tarLista').addEventListener('click', accionRec);
+$('btnRec2').addEventListener('click', () => abrirRec(EQUIPO.includes(tarQuien) ? { asignados: [tarQuien] } : undefined));
+
+// Formulario de recordatorio
+function renderRecAsig(sel) {
+  $('recAsig').innerHTML = EQUIPO.map(n => { const on = sel.includes(n); return `<button type="button" data-n="${n}" data-on="${on ? 1 : 0}" class="${chipCls(on)}">${n}</button>`; }).join('');
+}
+$('recAsig').addEventListener('click', e => { const b = e.target.closest('button[data-n]'); if (!b) return; const on = b.dataset.on !== '1'; b.dataset.on = on ? 1 : 0; b.className = chipCls(on); });
 let recEdit = null;
 function abrirRec(r) {
   r = r || {}; recEdit = r.id || null;
   $('recHead').textContent = recEdit ? '🔔 Editar recordatorio' : '🔔 Cargar recordatorio';
   $('recTitulo').value = r.titulo || ''; $('recDetalle').value = r.detalle || ''; $('recFecha').value = r.fecha || ymd(new Date()); $('recHasta').value = r.hasta || '';
+  renderRecAsig(r.asignados || []);
   $('recEliminar').classList.toggle('hidden', !recEdit); $('modalRec').classList.remove('hidden'); $('recTitulo').focus();
 }
 $('btnRec').addEventListener('click', () => abrirRec());
 $('recCancel').addEventListener('click', () => $('modalRec').classList.add('hidden'));
-$('recordatorios').addEventListener('click', e => { const b = e.target.closest('[data-rid]'); if (b) abrirRec(recordatorios.find(r => r.id === b.dataset.rid)); });
 $('formRec').addEventListener('submit', async e => {
   e.preventDefault();
-  const d = { titulo: $('recTitulo').value.trim(), detalle: $('recDetalle').value.trim(), fecha: $('recFecha').value, hasta: $('recHasta').value };
+  const d = { titulo: $('recTitulo').value.trim(), detalle: $('recDetalle').value.trim(), fecha: $('recFecha').value, hasta: $('recHasta').value,
+    asignados: [...$('recAsig').querySelectorAll('button[data-on="1"]')].map(b => b.dataset.n) };
   if (d.hasta && d.hasta < d.fecha) return toast('La fecha de finalización no puede ser anterior a la fecha de inicio.', 'error');
   try {
     if (recEdit) await updateDoc(doc(db, 'recordatorios', recEdit), d); else await addDoc(collection(db, 'recordatorios'), d);
@@ -960,7 +1072,7 @@ $('formRec').addEventListener('submit', async e => {
   } catch (err) { console.error(err); toast('No se pudo guardar el recordatorio.', 'error'); }
 });
 $('recEliminar').addEventListener('click', async () => {
-  if (!recEdit || !confirm('¿Eliminar este recordatorio?')) return;
+  if (!recEdit || !confirm('¿Eliminar este recordatorio sin guardarlo en el historial?')) return;
   try { await deleteDoc(doc(db, 'recordatorios', recEdit)); toast('Recordatorio eliminado.'); $('modalRec').classList.add('hidden'); }
   catch (err) { console.error(err); toast('No se pudo eliminar.', 'error'); }
 });
