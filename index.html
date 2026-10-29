@@ -58,6 +58,7 @@
       <button data-v="honorarios" class="nav w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-amber-800">💰 Cargar honorarios</button>
       <button data-v="estados" class="nav w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-amber-800">📋 Estado de trabajos</button>
       <button data-v="tareas" class="nav w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-amber-800">📌 Tareas Extras</button>
+      <button data-v="anuales" class="nav w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-amber-800">📆 Anuales y semestrales</button>
     </nav>
     <button id="btnLogout" class="m-2 px-3 py-2 rounded-lg text-sm bg-amber-900 hover:bg-amber-800 text-left">⎋ Cerrar sesión</button>
   </aside>
@@ -212,6 +213,19 @@
         <div class="bg-white rounded-xl border border-amber-200 overflow-auto max-h-[72vh]"><table id="estTabla" class="w-full text-xs"></table></div>
       </section>
 
+      <!-- ANUALES Y SEMESTRALES -->
+      <section id="v-anuales" class="view hidden">
+        <div class="flex flex-wrap items-center gap-3 mb-3 bg-white p-4 rounded-xl border border-amber-200 text-sm">
+          <label class="font-bold text-xs uppercase text-slate-700">Año</label>
+          <select id="anuAnio" class="px-2 py-1.5 border border-slate-300 rounded-lg text-sm"></select>
+          <label class="flex items-center gap-1"><input type="checkbox" id="anuPend"> Solo pendientes</label>
+          <div id="anuQuien" class="flex flex-wrap gap-1.5"></div>
+          <span id="anuResumen" class="ml-auto text-xs font-semibold text-slate-600"></span>
+        </div>
+        <p class="text-[11px] text-slate-500 mb-3">Estas obligaciones no se muestran en Estado de trabajos y, una vez vencidas, salen de Inicio. Acá elegís el año para ver si se hicieron.</p>
+        <div class="bg-white rounded-xl border border-amber-200 overflow-auto max-h-[72vh]"><table id="anuTabla" class="w-full text-xs"></table></div>
+      </section>
+
       <!-- TAREAS EXTRAS -->
       <section id="v-tareas" class="view hidden">
         <div class="flex flex-wrap items-center justify-between gap-3 mb-4 bg-white p-4 rounded-xl border border-amber-200">
@@ -357,6 +371,9 @@ const GAN26 = [[13,14,15],[13,16,17],[13,16,17],[13,14,15],[13,14,15],[15,16,17]
 const fijas = (y, m, tabla) => (y === 2026 && tabla[m]) ? tabla[m].map(d => new Date(y, m, d)) : [];
 // Recategorización semestral: vence el 5 de febrero y el 5 de agosto (se corre al siguiente día hábil)
 const recatFechas = (y, m) => (m === 1 || m === 7) ? secuencia(y, m, BASE.recat, 1) : [];
+// Anticipos de Ganancias (personas humanas, período 2026): 5 por año. Clave 'año-mes(0-11)'; terminaciones 0-3, 4-6, 7-9
+const ANT = { '2026-8': [14,15,16], '2026-9': [13,14,15], '2026-11': [14,15,16], '2027-1': [15,16,17], '2027-3': [13,14,15] };
+const antFechas = (y, m) => (ANT[`${y}-${m}`] || []).map(d => new Date(y, m, d));
 // Personas humanas: junio (estimado: 3 días hábiles desde el 11)
 const ganFechas = (y, m) => y === 2026 ? fijas(y, m, GAN26) : m === 5 ? secuencia(y, m, 11, 3) : [];
 // Feriados (AAAA-MM-DD). Completar según el calendario oficial.
@@ -365,6 +382,7 @@ const FERIADOS = ['2026-11-23', '2026-12-08', '2026-12-25', '2027-01-01'];
 const OBLIG = { mono: 'Monotributo', iva: 'IVA', aut: 'Seguridad Social · Autónomos', f931: 'Seguridad Social · Empleadores (F.931)', plan: 'Facilidades de Pago', gan: 'Ganancias', iibb: 'Ingresos Brutos', cm: 'Convenio Multilateral', recat: 'Recategorización (Monotributo)', mipyme: 'Mi Pymes', cm05: 'DDJJ Anual CM05', anticipo: 'Anticipo a las Ganancias', bp: 'Bienes Personales' };
 const SHORT = { mono: 'Monotributo', iva: 'IVA', aut: 'SS Autónomos', f931: 'SS Empleadores', plan: 'Facilidades', gan: 'Ganancias', iibb: 'Ing. Brutos', cm: 'Conv. Multilateral', recat: 'Recategorización', mipyme: 'Mi Pymes', cm05: 'DDJJ CM05', anticipo: 'Anticipo Gcias.', bp: 'Bs. Personales' };
 const TAXKEY = Object.fromEntries(Object.entries(OBLIG).map(([k, v]) => [v, k]));
+const ANUAL_SEM = ['gan', 'mipyme', 'cm05', 'bp', 'recat'];   // anuales y semestrales: viven en su propia pantalla
 const EQUIPO = ['Alba', 'Alejandra', 'Jesus', 'Conti'];
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -405,7 +423,7 @@ const guardado = sessionStorage.getItem('usuarioEstudio');
 if (guardado && CORREOS_AUTORIZADOS.includes(guardado)) entrar(guardado);
 
 // ===== MENÚ LATERAL =====
-const TITULOS = { inicio: 'Inicio · Vencimientos', clientes: 'Buscar cliente', honorarios: 'Cargar honorarios', estados: 'Estado de trabajos', tareas: 'Tareas extras' };
+const TITULOS = { inicio: 'Inicio · Vencimientos', clientes: 'Buscar cliente', honorarios: 'Cargar honorarios', estados: 'Estado de trabajos', tareas: 'Tareas extras', anuales: 'Anuales y semestrales' };
 let menuAbierto = window.innerWidth >= 1024;
 function aplicarMenu() {
   $('side').classList.toggle('-translate-x-full', !menuAbierto);
@@ -424,6 +442,7 @@ function ir(v) {
   if (v === 'inicio') renderInicio();
   if (v === 'estados') renderEstados(true);
   if (v === 'tareas') renderTareas();
+  if (v === 'anuales') renderAnuales();
   if (v === 'honorarios') { llenarLista(); $('honCliente').focus(); }
   if (window.innerWidth < 1024) cerrarMenu(); else aplicarMenu();
 }
@@ -449,6 +468,7 @@ function vencMes(y, m) {
   add('Ingresos Brutos', ['Todas'], secuencia(y, m, BASE.iibb, 1));
   add('Convenio Multilateral', ['0-2','3-5','6-7','8-9'], fijas(y, m, CM26));
   add(OBLIG.recat, ['Todas'], recatFechas(y, m));
+  add(OBLIG.anticipo, ['0-3','4-6','7-9'], antFechas(y, m));
   const out = ev.map(e => ({ ...e, key: ymd(e.date) + e.tax + e.terms, k: TAXKEY[e.tax] })), ref = new Date(y, m, 1);
   manuales.forEach(v => {                                  // las fechas cargadas a mano reemplazan a las calculadas
     const d = new Date(v.fecha + 'T00:00:00'); if (d.getFullYear() !== ref.getFullYear() || d.getMonth() !== ref.getMonth()) return;
@@ -472,7 +492,7 @@ function renderHero() {
 function renderInicio() {
   renderHero(); renderRecordatorios();
   const h = new Date(), hoy = ymd(h), meses = [0, 1].map(k => new Date(h.getFullYear(), h.getMonth() + k, 1));
-  const porMes = meses.map(d => ({ d, ev: vencMes(d.getFullYear(), d.getMonth()) }));
+  const porMes = meses.map(d => ({ d, ev: vencMes(d.getFullYear(), d.getMonth()).filter(visibleInicio) }));
   const todos = porMes.flatMap(x => x.ev);
   const prox = {};                                   // próximo vencimiento de cada impuesto
   todos.filter(e => ymd(e.date) >= hoy).sort((a, b) => a.date - b.date).forEach(e => { if (!prox[e.tax]) prox[e.tax] = ymd(e.date); });
@@ -725,6 +745,8 @@ $('vencLista').addEventListener('click', e => { const b = e.target.closest('[dat
 function responsables(c, k) { return c.asignaciones ? (c.asignaciones[k] || []) : (c.responsable ? [c.responsable] : []); }   // compatible con el campo anterior
 function asigDe(c) { const o = {}; (c.obligaciones || []).forEach(k => o[k] = responsables(c, k)); return o; }
 function nombres(c) { return [...new Set((c.obligaciones || []).flatMap(k => responsables(c, k)))]; }
+function visibleInicio(e) { return !(ANUAL_SEM.includes(e.k) && ymd(e.date) < ymd(new Date())); }   // anual/semestral vencida: sale de Inicio
+function enMes(c, k, evs) { return !ANUAL_SEM.includes(k) && evs.some(e => e.k === k && terminaEn(c.cuit, e.terms)); }   // ¿le toca este mes al cliente?
 function aplica(c, k) { return k !== 'recat' || c.condicion === 'Monotributo'; }          // la recategorización es solo para monotributistas
 function esMono() { const r = document.querySelector('input[name="condicion"]:checked'); return !!r && r.value === 'Monotributo'; }
 function pertenece(c, k, q) { if (!aplica(c, k)) return false; const rs = responsables(c, k); return q === 'Todos' || (q === 'Sin asignar' ? !rs.length : rs.includes(q)); }
@@ -766,7 +788,7 @@ const COLORES = { vencidas: ['from-rose-500 to-rose-400', 'bg-rose-50 text-rose-
 function statsEstado(lista, mk, evs, hoy, quien) {
   const r = { tot: 0, ok: 0, venc: 0, hoy: 0, cerca: 0 }, h0 = new Date(hoy + 'T00:00:00');
   lista.forEach(c => (c.obligaciones || []).forEach(k => {
-    if (!pertenece(c, k, quien)) return; r.tot++; const s = (c.estados || {})[skey(k, mk)];
+    if (!pertenece(c, k, quien) || !enMes(c, k, evs)) return; r.tot++; const s = (c.estados || {})[skey(k, mk)];
     if (s && s.estado === 'Finalizado') { r.ok++; return; }
     const ev = evs.find(e => e.k === k && terminaEn(c.cuit, e.terms)); if (!ev) return;
     const f = ymd(ev.date), dias = Math.round((ev.date - h0) / 864e5);
@@ -786,7 +808,7 @@ function mensaje(r, nombre, forzar) {
 }
 function renderEstados(forzar) {
   if (!$('estMes').value) $('estMes').value = ymd(new Date()).slice(0, 7);
-  const [Y, M] = $('estMes').value.split('-').map(Number), mk = `${Y}_${pad(M)}`, solo = $('estPend').checked, ks = Object.keys(OBLIG);
+  const [Y, M] = $('estMes').value.split('-').map(Number), mk = `${Y}_${pad(M)}`, solo = $('estPend').checked, ks = Object.keys(OBLIG).filter(k => !ANUAL_SEM.includes(k));
   const hoy = ymd(new Date()), evs = vencMes(Y, M - 1);
   const base = ordenar(clientes.filter(c => c.estado !== 'Inactivo' && (c.obligaciones || []).length));
   $('estEquipo').innerHTML = ['Todos', ...EQUIPO, 'Sin asignar'].map(q => {
@@ -799,7 +821,7 @@ function renderEstados(forzar) {
   }).join('');
   setTimeout(() => $('estEquipo').querySelectorAll('[data-w]').forEach(b => b.style.width = b.dataset.w + '%'), 30);
 
-  const lista = base.filter(c => (c.obligaciones || []).some(k => pertenece(c, k, estQuien)));
+  const lista = base.filter(c => (c.obligaciones || []).some(k => pertenece(c, k, estQuien) && enMes(c, k, evs)));
   const r = statsEstado(base, mk, evs, hoy, estQuien), pend = r.tot - r.ok, pct = r.tot ? Math.round(r.ok / r.tot * 100) : 0;
   const m = mensaje(r, EQUIPO.includes(estQuien) ? estQuien : 'equipo', forzar), col = COLORES[m.cat] || ['from-emerald-500 to-emerald-400', 'bg-emerald-50 text-emerald-800 border-emerald-200'];
   $('estBar').className = `h-full bg-gradient-to-r ${col[0]} rounded-full transition-all duration-700`; $('estBar').style.width = pct + '%';
@@ -811,7 +833,7 @@ function renderEstados(forzar) {
   const filas = lista.map(c => {
     let hay = false;
     const celdas = ks.map(k => {
-      if (!(c.obligaciones || []).includes(k) || !pertenece(c, k, estQuien)) return '<td class="p-2 text-center text-slate-300">—</td>';
+      if (!(c.obligaciones || []).includes(k) || !pertenece(c, k, estQuien) || !enMes(c, k, evs)) return '<td class="p-2 text-center text-slate-300">—</td>';
       const s = (c.estados || {})[skey(k, mk)], ok = s && s.estado === 'Finalizado', ev = evs.find(e => e.k === k && terminaEn(c.cuit, e.terms));
       if (!ok) hay = true;
       const rs = responsables(c, k), resp = `<div class="text-[10px] ${rs.length ? 'text-amber-800 font-semibold' : 'text-slate-400 italic'}">${rs.length ? '👤 ' + rs.map(esc).join(', ') : 'Sin asignar'}</div>`;
@@ -821,7 +843,7 @@ function renderEstados(forzar) {
     return solo && !hay ? '' : `<tr class="border-t border-amber-100"><td class="p-2 font-semibold sticky left-0 z-[5] bg-white min-w-[170px] shadow-[1px_0_0_0_#fde68a]">${esc(c.nombre)}<div class="font-mono text-[10px] text-slate-500">${esc(c.cuit)}</div></td>${celdas}</tr>`;
   }).join('');
   $('estTabla').innerHTML = `<thead><tr><th class="p-2 text-left sticky top-0 left-0 z-20 bg-amber-100 text-amber-900 min-w-[170px]">Cliente</th>${ks.map(k => `<th class="p-2 sticky top-0 z-10 bg-amber-100 text-amber-900 min-w-[125px] shadow-[0_1px_0_0_#fcd34d]">${SHORT[k]}</th>`).join('')}</tr></thead>
-    <tbody>${filas || '<tr><td colspan="14" class="p-4 text-center text-slate-400">Sin resultados para este filtro. Tildá las obligaciones y asigná un responsable en la ficha de cada cliente.</td></tr>'}</tbody>`;
+    <tbody>${filas || '<tr><td colspan="9" class="p-4 text-center text-slate-400">Sin resultados para este filtro. Tildá las obligaciones y asigná un responsable en la ficha de cada cliente.</td></tr>'}</tbody>`;
 }
 $('estMes').addEventListener('change', () => renderEstados(true)); $('estPend').addEventListener('change', () => renderEstados(true));
 $('estEquipo').addEventListener('click', e => {
@@ -830,7 +852,7 @@ $('estEquipo').addEventListener('click', e => {
   renderEstados(true);
 });
 $('estTabla').addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (b) marcar(clientes.find(c => c.id === b.dataset.id), b.dataset.k, $('estMes').value.replace('-', '_')); });
-function refrescarEstados() { renderVenc(); if (!$('v-inicio').classList.contains('hidden')) renderHero(); if (!$('v-estados').classList.contains('hidden')) renderEstados(); }
+function refrescarEstados() { renderVenc(); if (!$('v-inicio').classList.contains('hidden')) renderHero(); if (!$('v-anuales').classList.contains('hidden')) renderAnuales(); if (!$('v-estados').classList.contains('hidden')) renderEstados(); }
 
 // ===== Aleja (asistente de voz, reglas locales) =====
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -849,8 +871,8 @@ function hablar(txt) {
   u.lang = u.voice ? u.voice.lang : 'es-AR'; u.pitch = 1.1; u.rate = 1; speechSynthesis.speak(u);
 }
 function pendientesMes(mk) {
-  const out = [];
-  clientes.filter(c => c.estado !== 'Inactivo').forEach(c => (c.obligaciones || []).forEach(k => { if (!aplica(c, k)) return; const s = (c.estados || {})[skey(k, mk)]; if (!s || s.estado !== 'Finalizado') out.push({ c, k }); }));
+  const out = [], [py, pm] = mk.split('_').map(Number), evs = vencMes(py, pm - 1);
+  clientes.filter(c => c.estado !== 'Inactivo').forEach(c => (c.obligaciones || []).forEach(k => { if (!aplica(c, k) || !enMes(c, k, evs)) return; const s = (c.estados || {})[skey(k, mk)]; if (!s || s.estado !== 'Finalizado') out.push({ c, k }); }));
   return out;
 }
 function responder(q) {
@@ -1076,6 +1098,39 @@ $('recEliminar').addEventListener('click', async () => {
   try { await deleteDoc(doc(db, 'recordatorios', recEdit)); toast('Recordatorio eliminado.'); $('modalRec').classList.add('hidden'); }
   catch (err) { console.error(err); toast('No se pudo eliminar.', 'error'); }
 });
+
+// ===== ANUALES Y SEMESTRALES =====
+const ANU_COLS = [{ k: 'gan', mm: '01', t: 'Ganancias' }, { k: 'mipyme', mm: '01', t: 'Mi Pymes' }, { k: 'bp', mm: '01', t: 'Bienes Personales' }, { k: 'cm05', mm: '01', t: 'DDJJ Anual CM05' },
+  { k: 'recat', mm: '01', t: 'Recategorización · 1° semestre', f: 1 }, { k: 'recat', mm: '07', t: 'Recategorización · 2° semestre', f: 7 }];
+let anuQuien = estQuien;
+function renderAnuales() {
+  const sel = $('anuAnio');
+  if (!sel.options.length) { const y0 = new Date().getFullYear(); sel.innerHTML = [y0 + 1, y0, y0 - 1, y0 - 2].map(y => `<option ${y === y0 ? 'selected' : ''}>${y}</option>`).join(''); }
+  const Y = +sel.value, solo = $('anuPend').checked, hoy = ymd(new Date());
+  $('anuQuien').innerHTML = ['Todos', ...EQUIPO, 'Sin asignar'].map(n => `<button data-q="${n}" class="${chipCls(n === anuQuien)}">${n}</button>`).join('');
+  let tot = 0, pend = 0;
+  const filas = ordenar(clientes.filter(c => c.estado !== 'Inactivo')).map(c => {
+    let hay = false, algo = false;
+    const celdas = ANU_COLS.map(col => {
+      const k = col.k;
+      if (!(c.obligaciones || []).includes(k) || !pertenece(c, k, anuQuien)) return '<td class="p-2 text-center text-slate-300">—</td>';
+      algo = true; tot++;
+      const mk = `${Y}_${col.mm}`, s = (c.estados || {})[skey(k, mk)], ok = s && s.estado === 'Finalizado';
+      if (!ok) { pend++; hay = true; }
+      const ve = col.f ? recatFechas(Y, col.f)[0] : null, rs = responsables(c, k);
+      const nota = ok || !ve ? '' : `<div class="text-[10px] ${ymd(ve) < hoy ? 'text-rose-600 font-semibold' : 'text-slate-400'}">vence ${pad(ve.getDate())}/${pad(ve.getMonth() + 1)}</div>`;
+      return `<td class="p-1.5 text-center"><button data-id="${c.id}" data-k="${k}" data-mk="${mk}" class="w-full px-2 py-1 rounded-md font-semibold ${ok ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-700'}">${ok ? 'Finalizado · ' + esc(s.periodo) : 'No se hizo'}</button>${nota}
+        <div class="text-[10px] ${rs.length ? 'text-amber-800 font-semibold' : 'text-slate-400 italic'}">${rs.length ? '👤 ' + rs.map(esc).join(', ') : 'Sin asignar'}</div></td>`;
+    }).join('');
+    return !algo || (solo && !hay) ? '' : `<tr class="border-t border-amber-100"><td class="p-2 font-semibold sticky left-0 z-[5] bg-white min-w-[170px] shadow-[1px_0_0_0_#fde68a]">${esc(c.nombre)}<div class="font-mono text-[10px] text-slate-500">${esc(c.cuit)}</div></td>${celdas}</tr>`;
+  }).join('');
+  $('anuResumen').textContent = `${anuQuien === 'Todos' ? 'Todo el equipo' : anuQuien}: ${pend} pendientes de ${tot}`;
+  $('anuTabla').innerHTML = `<thead><tr><th class="p-2 text-left sticky top-0 left-0 z-20 bg-amber-100 text-amber-900 min-w-[170px]">Cliente</th>${ANU_COLS.map(col => `<th class="p-2 sticky top-0 z-10 bg-amber-100 text-amber-900 min-w-[130px] shadow-[0_1px_0_0_#fcd34d]">${col.t}</th>`).join('')}</tr></thead>
+    <tbody>${filas || '<tr><td colspan="7" class="p-4 text-center text-slate-400">Sin resultados. Tildá estas obligaciones en la ficha de cada cliente.</td></tr>'}</tbody>`;
+}
+$('anuAnio').addEventListener('change', renderAnuales); $('anuPend').addEventListener('change', renderAnuales);
+$('anuQuien').addEventListener('click', e => { const b = e.target.closest('[data-q]'); if (b) { anuQuien = b.dataset.q; renderAnuales(); } });
+$('anuTabla').addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (b) marcar(clientes.find(c => c.id === b.dataset.id), b.dataset.k, b.dataset.mk); });
 
 // ===== IMPRESIÓN =====
 const modal = $('modalImprimir');
